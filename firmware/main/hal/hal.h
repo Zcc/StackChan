@@ -120,6 +120,13 @@ struct XiaozhiConfig_t {
     uint8_t idleRandomMovementLevel  = 2;
 };
 
+struct HomeAgentConfig_t {
+    bool enabled = false;
+    std::string relayUrl;
+    std::string deviceId;
+    std::string token;
+};
+
 /**
  * @brief
  *
@@ -238,6 +245,9 @@ public:
     uitk::Signal<std::string_view> onWsDanceData;
     uitk::Signal<CommonLogLevel, std::string_view> onWsLog;
 
+    HomeAgentConfig_t getHomeAgentConfig();
+    void setHomeAgentConfig(const HomeAgentConfig_t& config);
+    void resetHomeAgentConfig();
     void startWebSocketAvatarService(std::function<void(std::string_view)> onStartLog);
 
     /* ----------------------------------- IMU ---------------------------------- */

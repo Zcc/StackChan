@@ -180,6 +180,12 @@ private:
             handle_set_wifi(doc["data"]);
         } else if (doc["cmd"] == "getWifiStatus") {
             handle_get_wifi_status();
+        } else if (doc["cmd"] == "setHomeAgent") {
+            handle_set_home_agent(doc["data"]);
+        } else if (doc["cmd"] == "getHomeAgent") {
+            handle_get_home_agent();
+        } else if (doc["cmd"] == "resetHomeAgent") {
+            handle_reset_home_agent();
         } else if (doc["cmd"] == "handshake") {
             std::string data = doc["data"].as<std::string>();
             handle_handshake(data);
@@ -217,6 +223,31 @@ private:
         connect_wifi(ssid, password);
     }
 
+    void handle_set_home_agent(ArduinoJson::JsonObject data)
+    {
+        HomeAgentConfig_t config;
+        config.enabled = data["enabled"] | false;
+        config.relayUrl = data["relayUrl"] | "";
+        config.deviceId = data["deviceId"] | "";
+        if (config.deviceId.empty()) {
+            config.deviceId = GetHAL().getFactoryMacString("");
+        }
+        config.token = data["token"] | "";
+        GetHAL().setHomeAgentConfig(config);
+        notify_home_agent_config("homeAgentSaved", config);
+    }
+
+    void handle_get_home_agent()
+    {
+        notify_home_agent_config("homeAgentConfig", GetHAL().getHomeAgentConfig());
+    }
+
+    void handle_reset_home_agent()
+    {
+        GetHAL().resetHomeAgentConfig();
+        notify_home_agent_config("homeAgentReset", GetHAL().getHomeAgentConfig());
+    }
+
     void handle_handshake(std::string_view data)
     {
         auto token = secret_logic::generate_handshake_token(data);
@@ -236,6 +267,24 @@ private:
         doc["data"]["type"]  = type;
         doc["data"]["state"] = state;
 
+        notify_json(doc);
+    }
+
+    void notify_home_agent_config(const char* state, const HomeAgentConfig_t& config)
+    {
+        ArduinoJson::JsonDocument doc;
+        doc["cmd"] = "notifyHomeAgent";
+        doc["data"]["state"] = state;
+        doc["data"]["enabled"] = config.enabled;
+        doc["data"]["relayUrl"] = config.relayUrl;
+        doc["data"]["deviceId"] = config.deviceId;
+        doc["data"]["hasToken"] = !config.token.empty();
+
+        notify_json(doc);
+    }
+
+    void notify_json(ArduinoJson::JsonDocument& doc)
+    {
         std::string json_str;
         ArduinoJson::serializeJson(doc, json_str);
         stackchan_ble_notify_config(json_str.c_str(), json_str.length());

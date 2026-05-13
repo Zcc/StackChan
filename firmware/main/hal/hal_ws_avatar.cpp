@@ -30,6 +30,7 @@ static std::string _tag = "WS-Avatar";
 
 static const std::string _setting_ns              = "stackchan";
 static const std::string _setting_device_name_key = "device_name";
+static const std::string _home_agent_setting_ns   = "home_agent";
 
 class WebSocketAvatar {
 public:
@@ -54,6 +55,7 @@ public:
         DanceSequence     = 0x14,
         StartAudioStream  = 0x18,
         StopAudioStream   = 0x19,
+        AimedTakePhoto    = 0x1A,
     };
 
     struct ReceivedMessage {
@@ -63,7 +65,7 @@ public:
 
     void init()
     {
-        _url = fmt::format("{}/stackChan/ws?deviceType=StackChan", secret_logic::get_server_url());
+        loadConfig();
 
         connect();
 
@@ -97,7 +99,7 @@ public:
 
     void connect()
     {
-        auto token = secret_logic::generate_auth_token();
+        auto token = _auth_token.empty() ? secret_logic::generate_auth_token() : _auth_token;
 
         // 销毁旧实例，确保状态复位
         _websocket.reset();
@@ -115,6 +117,10 @@ public:
 
         // 设置认证头
         _websocket->SetHeader("Authorization", token.c_str());
+        if (_home_agent_enabled) {
+            _websocket->SetHeader("X-StackChan-Role", "device");
+            _websocket->SetHeader("X-StackChan-Device-Id", _device_id.c_str());
+        }
 
         // 设置回调
         _websocket->OnConnected([this]() {
@@ -134,7 +140,7 @@ public:
             _msg_queue.push({binary, std::vector<uint8_t>(data, data + len)});
         });
 
-        // ESP_LOGI(_tag.c_str(), "Connecting to %s...", _url.c_str());
+        ESP_LOGI(_tag.c_str(), "Connecting to %s", _url.c_str());
         // GetHAL().onWsLog.emit(CommonLogLevel::Info, "Connecting to server...");
         if (!_websocket->Connect(_url.c_str())) {
             ESP_LOGE(_tag.c_str(), "Failed to connect");
@@ -362,6 +368,11 @@ public:
                 case DataType::StopAudioStream: {
                     break;
                 }
+                case DataType::AimedTakePhoto: {
+                    ESP_LOGI(_tag.c_str(), "AimedTakePhoto");
+                    captureAndSendFrame(DataType::AimedTakePhoto);
+                    break;
+                }
                 default:
                     break;
             }
@@ -375,7 +386,7 @@ public:
         return _websocket && _websocket->IsConnected();
     }
 
-    void captureAndSendFrame()
+    void captureAndSendFrame(DataType response_type = DataType::Jpeg)
     {
         if (!isConnected()) {
             return;
@@ -412,7 +423,7 @@ public:
                 mclog::info("jpeg encode time: {} ms", _interval / 1000);
 
                 if (jpeg_data) {
-                    sendPacket(DataType::Jpeg, jpeg_data, jpeg_len);  // Type 2 for JPEG
+                    sendPacket(response_type, jpeg_data, jpeg_len);
                     free(jpeg_data);
                 }
             }
@@ -436,6 +447,44 @@ private:
     std::queue<ReceivedMessage> _msg_queue;
 
     std::mutex _send_mutex;
+    bool _home_agent_enabled = false;
+    std::string _device_id;
+    std::string _auth_token;
+
+    static bool startsWith(const std::string& value, const char* prefix)
+    {
+        return value.rfind(prefix, 0) == 0;
+    }
+
+    static char joinerForUrl(const std::string& url)
+    {
+        return url.find('?') == std::string::npos ? '?' : '&';
+    }
+
+    void loadConfig()
+    {
+        auto config = GetHAL().getHomeAgentConfig();
+        _home_agent_enabled = config.enabled && !config.relayUrl.empty();
+        _device_id = config.deviceId.empty() ? GetHAL().getFactoryMacString("") : config.deviceId;
+        _auth_token = config.token;
+
+        if (_home_agent_enabled) {
+            _url = config.relayUrl;
+            if (!startsWith(_url, "ws://") && !startsWith(_url, "wss://")) {
+                _url = std::string("wss://") + _url;
+            }
+            if (_url.find("role=") == std::string::npos) {
+                _url += joinerForUrl(_url);
+                _url += "role=device";
+            }
+            if (_url.find("deviceId=") == std::string::npos) {
+                _url += joinerForUrl(_url);
+                _url += "deviceId=" + _device_id;
+            }
+        } else {
+            _url = fmt::format("{}/stackChan/ws?deviceType=StackChan", secret_logic::get_server_url());
+        }
+    }
 
     void sendPacket(DataType type, const uint8_t* data, size_t len)
     {
@@ -518,4 +567,34 @@ void Hal::startWebSocketAvatarService(std::function<void(std::string_view)> onSt
 
     onStartLog("Connecting to\nserver...");
     mooncake::GetMooncake().extensionManager()->createAbility(std::make_unique<WebsocketAvatarWorker>());
+}
+
+
+HomeAgentConfig_t Hal::getHomeAgentConfig()
+{
+    Settings settings(_home_agent_setting_ns, false);
+    HomeAgentConfig_t config;
+    config.enabled = settings.GetBool("enabled", false);
+    config.relayUrl = settings.GetString("relay_url", "");
+    config.deviceId = settings.GetString("device_id", getFactoryMacString(""));
+    config.token = settings.GetString("token", "");
+    return config;
+}
+
+void Hal::setHomeAgentConfig(const HomeAgentConfig_t& config)
+{
+    Settings settings(_home_agent_setting_ns, true);
+    settings.SetBool("enabled", config.enabled);
+    settings.SetString("relay_url", config.relayUrl);
+    settings.SetString("device_id", config.deviceId.empty() ? getFactoryMacString("") : config.deviceId);
+    settings.SetString("token", config.token);
+}
+
+void Hal::resetHomeAgentConfig()
+{
+    Settings settings(_home_agent_setting_ns, true);
+    settings.SetBool("enabled", false);
+    settings.SetString("relay_url", "");
+    settings.SetString("device_id", getFactoryMacString(""));
+    settings.SetString("token", "");
 }

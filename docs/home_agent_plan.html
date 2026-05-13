@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StackChan HomeAgent Implementation Plan</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --paper: #ffffff;
+      --ink: #17202a;
+      --muted: #647082;
+      --line: #d9dee7;
+      --blue: #2563eb;
+      --cyan: #0891b2;
+      --green: #169b62;
+      --amber: #b7791f;
+      --red: #c2410c;
+      --chip: #eef2f7;
+      --screen: #111827;
+      --screen2: #1f2937;
+      --accent: #ff6699;
+      --agent: #14b8a6;
+      --violet: #7c3aed;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 56px;
+    }
+
+    h1, h2, h3 { line-height: 1.18; margin: 0; }
+    h1 { font-size: 34px; letter-spacing: 0; }
+    h2 { font-size: 22px; margin-bottom: 14px; }
+    h3 { font-size: 16px; margin-bottom: 8px; }
+    p { margin: 0 0 12px; }
+    a { color: var(--blue); }
+
+    .hero {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      margin-bottom: 18px;
+    }
+
+    .hero p {
+      max-width: 820px;
+      color: var(--muted);
+      font-size: 16px;
+      margin-top: 12px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--chip);
+      color: #344054;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+    }
+
+    .span-12 { grid-column: span 12; }
+    .span-8 { grid-column: span 8; }
+    .span-6 { grid-column: span 6; }
+    .span-4 { grid-column: span 4; }
+
+    .diagram {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 10px;
+      align-items: stretch;
+      margin-top: 14px;
+    }
+
+    .node {
+      min-height: 96px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcfe;
+      position: relative;
+    }
+
+    .node strong { display: block; font-size: 14px; margin-bottom: 6px; }
+    .node span { display: block; color: var(--muted); font-size: 12px; }
+
+    .arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .route {
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      gap: 16px;
+      border-top: 1px solid var(--line);
+      padding: 16px 0;
+    }
+
+    .route:first-of-type { border-top: 0; padding-top: 0; }
+    .route:last-child { padding-bottom: 0; }
+
+    .phase {
+      font-weight: 700;
+      color: var(--blue);
+    }
+
+    ul { margin: 8px 0 0 20px; padding: 0; }
+    li { margin: 5px 0; }
+
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    code {
+      background: #eef2f7;
+      padding: 2px 5px;
+      border-radius: 5px;
+      font-size: 0.92em;
+    }
+
+    pre {
+      margin: 12px 0 0;
+      padding: 12px;
+      overflow: auto;
+      border-radius: 8px;
+      background: #101828;
+      color: #eef6ff;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    th, td {
+      border-top: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { color: #344054; background: #f8fafc; }
+
+    .screen-wrap {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 22px;
+      align-items: start;
+    }
+
+    .device-frame {
+      width: 360px;
+      padding: 20px;
+      border-radius: 28px;
+      background: #e7e9ee;
+      border: 1px solid #cbd2dc;
+      box-shadow: inset 0 0 0 1px #f8fafc;
+    }
+
+    .screen {
+      width: 320px;
+      height: 240px;
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(20, 184, 166, 0.06) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(255, 102, 153, 0.05) 1px, transparent 1px),
+        radial-gradient(circle at 76% 18%, rgba(255, 102, 153, 0.32), transparent 28%),
+        radial-gradient(circle at 18% 80%, rgba(20, 184, 166, 0.26), transparent 30%),
+        #090b16;
+      background-size: 18px 18px, 18px 18px, auto, auto, auto;
+      color: white;
+      overflow: hidden;
+      position: relative;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      box-shadow: 0 16px 36px rgba(16, 24, 40, 0.24);
+    }
+
+    .screen::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, transparent 0, rgba(255, 255, 255, 0.04) 50%, transparent 51%);
+      background-size: 100% 6px;
+      opacity: 0.32;
+      pointer-events: none;
+    }
+
+    .screen .topbar {
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+      background: rgba(7, 10, 24, 0.72);
+      border-bottom: 1px solid rgba(20, 184, 166, 0.32);
+      font-size: 10px;
+      letter-spacing: 0.4px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .screen .brand {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 800;
+      color: #e0fff9;
+      text-shadow: 0 0 8px rgba(20, 184, 166, 0.72);
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--agent);
+      box-shadow: 0 0 10px rgba(20, 184, 166, 0.92), 0 0 18px rgba(255, 102, 153, 0.42);
+    }
+
+    .screen .icons {
+      display: flex;
+      gap: 7px;
+      color: #f0abfc;
+      text-shadow: 0 0 8px rgba(255, 102, 153, 0.62);
+    }
+
+    .screen .content {
+      height: 216px;
+      position: relative;
+      padding: 0;
+      z-index: 1;
+    }
+
+    .avatar-face {
+      width: 206px;
+      height: 174px;
+      border-radius: 46% 46% 42% 42%;
+      background:
+        radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.95), rgba(255, 224, 235, 0.76) 28%, rgba(255, 102, 153, 0.18) 62%, rgba(20, 184, 166, 0.1)),
+        linear-gradient(180deg, #ffe4f0, #ffc1dc 58%, #f093c3);
+      position: absolute;
+      left: 24px;
+      top: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      box-shadow:
+        0 0 0 2px rgba(20, 184, 166, 0.18),
+        0 0 24px rgba(255, 102, 153, 0.36),
+        0 0 32px rgba(20, 184, 166, 0.22);
+    }
+
+    .avatar-face::before {
+      content: "";
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      top: -14px;
+      height: 30px;
+      border-radius: 18px 18px 8px 8px;
+      background: linear-gradient(90deg, #12f7d6, #ff66c4);
+      opacity: 0.85;
+      box-shadow: 0 0 18px rgba(20, 184, 166, 0.62);
+    }
+
+    .eye {
+      width: 28px;
+      height: 42px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #07111f, #141827);
+      position: absolute;
+      top: 58px;
+      box-shadow: inset 0 -8px 0 rgba(20, 184, 166, 0.55), 0 0 14px rgba(20, 184, 166, 0.4);
+    }
+
+    .eye::after {
+      content: "";
+      position: absolute;
+      left: 8px;
+      top: 7px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #fff;
+      opacity: 0.9;
+    }
+
+    .eye.left { left: 49px; }
+    .eye.right { right: 49px; }
+    .mouth {
+      width: 46px;
+      height: 22px;
+      border: 5px solid #141827;
+      border-top: 0;
+      border-radius: 0 0 32px 32px;
+      position: absolute;
+      left: 80px;
+      top: 116px;
+      box-shadow: 0 7px 0 rgba(255, 102, 153, 0.28);
+    }
+
+    .small-status {
+      position: absolute;
+      right: 9px;
+      top: 34px;
+      width: 80px;
+      display: grid;
+      gap: 5px;
+    }
+
+    .status-row {
+      height: 19px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 5px;
+      padding: 0 5px;
+      background: rgba(9, 11, 22, 0.72);
+      border: 1px solid rgba(20, 184, 166, 0.34);
+      color: #dffcf8;
+      font-size: 9px;
+      box-shadow: 0 0 12px rgba(20, 184, 166, 0.12);
+      white-space: nowrap;
+    }
+
+    .status-row span { display: none; }
+    .status-row b { font-size: 9px; font-weight: 800; }
+    .status-ok { color: #5eead4; }
+    .status-warn { color: #fbbf24; }
+
+    .agent-card {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 10px;
+      border-radius: 7px;
+      background: rgba(9, 11, 22, 0.76);
+      padding: 7px 10px;
+      min-height: 38px;
+      display: grid;
+      gap: 2px;
+      border: 1px solid rgba(255, 102, 153, 0.36);
+      box-shadow: 0 0 18px rgba(255, 102, 153, 0.18);
+    }
+
+    .agent-card .label { color: #67e8f9; font-size: 9px; letter-spacing: 0.6px; text-transform: uppercase; }
+    .agent-card .text { color: #f8fafc; font-size: 12px; line-height: 1.2; }
+
+    .variants {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .mini-screen {
+      height: 112px;
+      border-radius: 8px;
+      background: var(--screen);
+      color: #f8fafc;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border: 1px solid #273449;
+    }
+
+    .mini-title { font-size: 12px; font-weight: 700; }
+    .mini-copy { font-size: 11px; color: #cbd5e1; line-height: 1.35; }
+    .bar { height: 6px; border-radius: 6px; background: #334155; overflow: hidden; }
+    .bar i { display: block; height: 100%; width: 62%; background: var(--agent); }
+
+    .tagline {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .callout {
+      border-left: 4px solid var(--blue);
+      background: #eff6ff;
+      padding: 12px 14px;
+      border-radius: 6px;
+      margin-top: 12px;
+      color: #1e3a8a;
+    }
+
+    @media (max-width: 900px) {
+      .span-8, .span-6, .span-4 { grid-column: span 12; }
+      .diagram { grid-template-columns: 1fr; }
+      .arrow { display: none; }
+      .screen-wrap { grid-template-columns: 1fr; }
+      .device-frame { width: 100%; max-width: 360px; }
+      .variants { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <h1>StackChan HomeAgent 实施计划</h1>
+      <p>目标是在不破坏小智平台能力的前提下，为 StackChan 新增一条可外出使用的 HomeAgent 通道，让它通过手机热点或任意 Wi-Fi 连接到公网 WSS relay，再由家里电脑上的 agent bridge 接入 Codex、OpenClaw、Hermes 等 agent。</p>
+      <div class="meta">
+        <span class="pill">固件新增 HomeAgent 模式</span>
+        <span class="pill">保留 AI.AGENT / 小智链路</span>
+        <span class="pill">WSS relay 穿透</span>
+        <span class="pill">MCP / HTTP / WebSocket bridge</span>
+        <span class="pill">320 x 240 屏幕设计</span>
+      </div>
+    </section>
+
+    <section class="panel span-12">
+      <h2>目标架构</h2>
+      <p class="tagline">StackChan 和家里电脑都主动连公网 relay，因此不需要给家里电脑开公网端口，也不要求 StackChan 支持 Tailscale。</p>
+      <div class="diagram">
+        <div class="node"><strong>StackChan</strong><span>HomeAgent 固件模式，主动连 WSS，收控制包，发 JPEG/状态。</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><strong>VPS / Cloudflare Relay</strong><span>按 deviceId 配对 device 与 agent，只做转发和鉴权。</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><strong>Home Agent Bridge</strong><span>运行在家里电脑，暴露 MCP、HTTP、本地 WebSocket。</span></div>
+      </div>
+      <pre>Codex / OpenClaw / Hermes
+  -> stackchan-agent-bridge
+  -> wss://relay.example.com/ws?role=agent&amp;deviceId=&lt;id&gt;
+  -> StackChan HomeAgent firmware</pre>
+    </section>
+
+    <div class="grid">
+      <section class="panel span-8">
+        <h2>实施路线图</h2>
+        <div class="route">
+          <div class="phase">Phase 1<br>MVP 闭环</div>
+          <div>
+            <h3>让 StackChan 能被家里电脑控制</h3>
+            <ul>
+              <li>固件新增或复用 HomeAgent/AVATAR WebSocket client。</li>
+              <li>Relay 支持 <code>role=device</code> 和 <code>role=agent</code> 两类连接。</li>
+              <li>Bridge 支持 <code>/say</code>、<code>/move</code>、<code>/avatar</code>、<code>/status</code>。</li>
+              <li>验收：StackChan 通过手机热点连 relay，电脑端 curl 一次能说话和转头。</li>
+            </ul>
+          </div>
+        </div>
+        <div class="route">
+          <div class="phase">Phase 2<br>图像能力</div>
+          <div>
+            <h3>接入视频流和单次抓拍</h3>
+            <ul>
+              <li>复用现有 <code>0x05 StartCameraStream</code>、<code>0x06 StopCameraStream</code>、<code>0x02 Jpeg</code>。</li>
+              <li>补齐固件侧 <code>0x1A AimedTakePhoto</code>，用于单次抓拍。</li>
+              <li>Bridge 保存 <code>latest.jpg</code> 和 <code>latest_photo.jpg</code>。</li>
+              <li>验收：agent 能调用抓拍，并拿到 JPEG。</li>
+            </ul>
+          </div>
+        </div>
+        <div class="route">
+          <div class="phase">Phase 3<br>Agent 工具化</div>
+          <div>
+            <h3>让不同 agent 使用统一工具</h3>
+            <ul>
+              <li>Codex 优先走 MCP tools。</li>
+              <li>OpenClaw/Hermes 可走 HTTP 或本地 WebSocket。</li>
+              <li>工具包括 <code>stackchan_say</code>、<code>stackchan_move</code>、<code>stackchan_take_photo</code> 等。</li>
+            </ul>
+          </div>
+        </div>
+        <div class="route">
+          <div class="phase">Phase 4<br>配置安全</div>
+          <div>
+            <h3>去掉硬编码，加入认证和状态</h3>
+            <ul>
+              <li>Relay URL、deviceId、token 存 NVS。</li>
+              <li>早期用 Bearer token，正式版升级 HMAC/JWT。</li>
+              <li>HomeAgent 页面显示 Wi-Fi、Relay、Agent、Camera 状态。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel span-4">
+        <h2>边界原则</h2>
+        <ul>
+          <li>不改 <code>AI.AGENT</code> 的小智启动链路。</li>
+          <li>不把 HomeAgent 伪装成小智平台。</li>
+          <li>优先复用现有 AVATAR WebSocket 协议。</li>
+          <li>StackChan 只主动出站连接，不做公网 server。</li>
+          <li>BLE 只用于配置或低频控制，不承载图像。</li>
+        </ul>
+        <div class="callout">最终菜单建议：<br><strong>AI.AGENT</strong> 继续连接小智；<br><strong>HOME_AGENT</strong> 连接你的电脑 agent；<br><strong>SETUP</strong> 管理 Wi-Fi 和 relay 配置。</div>
+      </aside>
+
+      <section class="panel span-6">
+        <h2>协议设计</h2>
+        <p>继续使用现有二进制包格式：</p>
+        <pre>[type: 1 byte][length: 4 bytes big endian][payload]</pre>
+        <table>
+          <thead><tr><th>类型</th><th>方向</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr><td><code>0x03</code></td><td>Agent → StackChan</td><td>ControlAvatar，控制表情、眼睛、嘴型。</td></tr>
+            <tr><td><code>0x04</code></td><td>Agent → StackChan</td><td>ControlMotion，控制 yaw/pitch 舵机。</td></tr>
+            <tr><td><code>0x07</code></td><td>Agent → StackChan</td><td>TextMessage，在头像上显示来自 agent 的文字。</td></tr>
+            <tr><td><code>0x14</code></td><td>Agent → StackChan</td><td>DanceSequence，播放动作序列。</td></tr>
+            <tr><td><code>0x05</code></td><td>Agent → StackChan</td><td>开始连续摄像头流。</td></tr>
+            <tr><td><code>0x06</code></td><td>Agent → StackChan</td><td>停止连续摄像头流。</td></tr>
+            <tr><td><code>0x02</code></td><td>StackChan → Agent</td><td>连续 JPEG 帧。</td></tr>
+            <tr><td><code>0x1A</code></td><td>双向</td><td>单次抓拍请求和 JPEG 响应。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="panel span-6">
+        <h2>Bridge 工具接口</h2>
+        <p>家里电脑上的 bridge 把 agent 友好的工具调用翻译成 StackChan 协议包。</p>
+        <pre>stackchan_say(text)
+stackchan_move(yaw, pitch, speed)
+stackchan_avatar(json)
+stackchan_expression(emotion)
+stackchan_dance(sequence)
+stackchan_take_photo()
+stackchan_start_camera()
+stackchan_stop_camera()
+stackchan_get_latest_frame()
+stackchan_status()</pre>
+        <p>同时建议保留本地 HTTP API，方便 OpenClaw、Hermes 或脚本接入：</p>
+        <pre>POST /say
+POST /move
+POST /camera/take-photo
+POST /camera/start
+POST /camera/stop
+GET  /camera/latest.jpg
+GET  /status</pre>
+      </section>
+
+
+      <section class="panel span-6">
+        <h2>外出网络变化处理</h2>
+        <p>HomeAgent 不能假设网络固定。StackChan 应该维护一个已知 Wi-Fi 列表，并提供 BLE 临时配网入口；外出时最常见的是连接手机热点。</p>
+        <table>
+          <thead><tr><th>场景</th><th>处理方式</th><th>屏幕提示</th></tr></thead>
+          <tbody>
+            <tr><td>已保存网络可用</td><td>启动后按优先级自动连接，例如家里 Wi-Fi、手机热点、常用办公 Wi-Fi。</td><td><code>Wi-Fi connecting</code> → <code>Relay connecting</code></td></tr>
+            <tr><td>外出网络变了</td><td>StackChan 进入 config-needed 状态，开启 BLE 配网服务；手机 App 写入新的 SSID/password。</td><td><code>No Wi-Fi</code>、显示 BLE config 提示。</td></tr>
+            <tr><td>手机热点</td><td>手机先开热点，App 通过 BLE 把热点 SSID/password 写入 StackChan，StackChan 连接后再连 WSS relay。</td><td><code>Hotspot connected</code>、随后显示 relay 状态。</td></tr>
+            <tr><td>Portal 网络</td><td>酒店/机场网页认证网络不建议作为主方案；优先使用手机热点或随身路由器。</td><td><code>Wi-Fi blocked</code> 或 <code>Relay timeout</code></td></tr>
+          </tbody>
+        </table>
+        <div class="callout">固件侧建议保存多个 Wi-Fi profile，并记录最后成功连接的网络。失败时不要卡死 HomeAgent 页面，应保留 BLE 配网和返回 Launcher 的入口。</div>
+      </section>
+
+      <section class="panel span-6">
+        <h2>VPS 与家里电脑改造</h2>
+        <p>VPS 只做公网 relay；家里电脑做 agent bridge。这样安全边界清楚，agent、本地文件和模型能力都留在家里电脑上。</p>
+        <table>
+          <thead><tr><th>位置</th><th>需要部署/修改</th><th>职责</th></tr></thead>
+          <tbody>
+            <tr><td>VPS / Cloudflare</td><td>部署 <code>stackchan-relay</code>，监听 <code>wss://relay.example.com/ws</code>。</td><td>接受 device/agent 两类连接，按 <code>deviceId</code> 配对转发。</td></tr>
+            <tr><td>VPS / Cloudflare</td><td>配置 TLS、反向代理、鉴权 token、心跳超时和日志。</td><td>保证外网可达，拒绝未授权连接，记录上下线和错误。</td></tr>
+            <tr><td>家里电脑</td><td>部署 <code>stackchan-agent-bridge</code>，作为 WSS client 主动连接 relay。</td><td>把 MCP/HTTP/WS 命令翻译为 StackChan 二进制协议。</td></tr>
+            <tr><td>家里电脑</td><td>增加 MCP server、HTTP API、本地图片缓存和自动重连。</td><td>给 Codex/OpenClaw/Hermes 提供统一工具接口。</td></tr>
+            <tr><td>家里电脑</td><td>设置开机自启，例如 launchd/systemd/pm2。</td><td>保证你不在家时 bridge 也在线。</td></tr>
+          </tbody>
+        </table>
+        <pre>VPS relay:
+  device websocket: role=device, deviceId=stackchan-xxxx
+  agent websocket:  role=agent,  deviceId=stackchan-xxxx
+
+Home computer bridge:
+  connects to relay
+  exposes MCP tools to Codex
+  exposes http://127.0.0.1:8787 for other agents
+  stores latest camera frame locally</pre>
+      </section>
+
+      <section class="panel span-12">
+        <h2>HomeAgent 屏幕设计</h2>
+        <p class="tagline">StackChan 屏幕是 320 x 240。HomeAgent 页面要一眼分辨当前不是小智模式，而是连接家里电脑 agent 的远控模式；同时不能遮挡头像表达。</p>
+        <div class="screen-wrap">
+          <div class="device-frame">
+            <div class="screen" aria-label="HomeAgent online screen mockup">
+              <div class="topbar">
+                <div class="brand"><span class="dot"></span><span>HOME_AGENT</span></div>
+                <div class="icons"><span>Wi-Fi</span><span>82%</span></div>
+              </div>
+              <div class="content">
+                <div class="avatar-face">
+                  <div class="eye left"></div>
+                  <div class="eye right"></div>
+                  <div class="mouth"></div>
+                </div>
+                <div class="small-status">
+                  <div class="status-row"><span>Relay</span><b class="status-ok">RLY</b></div>
+                  <div class="status-row"><span>Agent</span><b class="status-ok">AGT</b></div>
+                  <div class="status-row"><span>Camera</span><b>CAM</b></div>
+                </div>
+                <div class="agent-card">
+                  <div class="label">Codex uplink</div>
+                  <div class="text">我在家里的 agent bridge 上线了。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3>主屏布局规格</h3>
+            <ul>
+              <li><strong>顶部 24px 霓虹状态栏：</strong>左侧显示 HOME_AGENT 和连接灯，右侧只放 Wi-Fi、电量等短信息。</li>
+              <li><strong>主视觉头像区：</strong>头像占据约三分之二屏幕宽度，表情成为第一视觉，状态信息退到 HUD 层。</li>
+              <li><strong>右侧 HUD 芯片：</strong>Relay、Agent、Camera 压缩成 3 个小徽标，不再占大面板空间。</li>
+              <li><strong>底部角色对白：</strong>显示最近一条 agent 消息，像 StackChan 自己在说话，而不是系统日志。</li>
+              <li><strong>赛博朋克视觉：</strong>深色底、细网格、青绿色在线光、品红高光；实现时可用 LVGL 纯色、边框和简单渐变近似。</li>
+            </ul>
+            <h3>交互规则</h3>
+            <ul>
+              <li>短按右侧 HUD 芯片：切换详细信息页，显示 deviceId、relay host、IP、RSSI。</li>
+              <li>长按屏幕底部：断开 HomeAgent 并回到 Launcher。</li>
+              <li>收到 <code>TextMessage</code>：底部消息条更新，头像触发 SpeakingModifier。</li>
+              <li>抓拍或视频流开启：Camera 行从 idle 变为 capture 或 streaming。</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="variants">
+          <div class="mini-screen">
+            <div class="mini-title">Connecting</div>
+            <div class="mini-copy">Wi-Fi ready<br>Relay connecting...</div>
+            <div class="bar"><i style="width:38%;background:#fbbf24"></i></div>
+          </div>
+          <div class="mini-screen">
+            <div class="mini-title">Agent Offline</div>
+            <div class="mini-copy">Relay online<br>Waiting for home bridge</div>
+            <div class="bar"><i style="width:68%;background:#f97316"></i></div>
+          </div>
+          <div class="mini-screen">
+            <div class="mini-title">Streaming</div>
+            <div class="mini-copy">Camera streaming<br>JPEG frames to bridge</div>
+            <div class="bar"><i style="width:88%;background:#14b8a6"></i></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel span-12">
+        <h2>固件改造点</h2>
+        <table>
+          <thead><tr><th>文件/模块</th><th>改造内容</th><th>备注</th></tr></thead>
+          <tbody>
+            <tr><td><code>app_home_agent</code> 或 <code>app_avatar</code></td><td>新增 HomeAgent 入口和状态页。</td><td>推荐独立 app，避免混淆小智入口。</td></tr>
+            <tr><td><code>hal_ws_avatar.cpp</code></td><td>支持 relay URL/token、<code>0x1A</code> 抓拍、状态回调。</td><td>复用现有 WebSocket worker。</td></tr>
+            <tr><td><code>secret_logic</code> / NVS config</td><td>读取 <code>home_agent.relay_url</code>、<code>device_id</code>、<code>auth_token</code>。</td><td>MVP 可先硬编码，正式版存 NVS。</td></tr>
+            <tr><td><code>Setup</code> 或 BLE config</td><td>配置 relay 地址、token、启用开关。</td><td>可作为第四阶段完成。</td></tr>
+          </tbody>
+        </table>
+        <div class="callout">小智相关路径保持不动：<code>AI.AGENT</code> 仍调用 <code>GetHAL().requestXiaozhiStart()</code>，最终进入 <code>GetHAL().startXiaozhi()</code>。</div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
