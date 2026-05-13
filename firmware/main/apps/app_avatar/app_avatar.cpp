@@ -257,6 +257,7 @@ void AppAvatar::onClose()
 
         GetStackChan().resetAvatar();
         _video_window.reset();
+        GetHAL().stopWebSocketAvatarService();
 
         GetHAL().onBleAvatarData.clear();
         GetHAL().onBleMotionData.clear();
@@ -272,7 +273,7 @@ void AppAvatar::onClose()
         view::destroy_status_bar();
     }
 
-    GetHAL().requestWarmReboot(1);
+    GetHAL().requestWarmReboot(2);
 }
 
 void AppAvatar::check_auto_angle_sync_mode()

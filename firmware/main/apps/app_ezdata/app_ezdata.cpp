@@ -97,5 +97,5 @@ void AppEzdata::onClose()
     view::destroy_home_indicator();
     view::destroy_status_bar();
 
-    GetHAL().requestWarmReboot(4);
+    GetHAL().requestWarmReboot(5);
 }

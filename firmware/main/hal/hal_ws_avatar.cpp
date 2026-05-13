@@ -542,6 +542,9 @@ public:
 
     void onRunning() override
     {
+        if (!_service) {
+            return;
+        }
         if (GetHAL().millis() - _last_tick < 20) {
             return;
         }
@@ -554,10 +557,17 @@ public:
         _service.reset();
     }
 
+    void stop()
+    {
+        _service.reset();
+    }
+
 private:
     std::unique_ptr<WebSocketAvatar> _service;
     uint32_t _last_tick = 0;
 };
+
+static WebsocketAvatarWorker* _ws_avatar_worker = nullptr;
 
 void Hal::startWebSocketAvatarService(std::function<void(std::string_view)> onStartLog)
 {
@@ -566,9 +576,24 @@ void Hal::startWebSocketAvatarService(std::function<void(std::string_view)> onSt
     startNetwork(onStartLog);
 
     onStartLog("Connecting to\nserver...");
-    mooncake::GetMooncake().extensionManager()->createAbility(std::make_unique<WebsocketAvatarWorker>());
+
+    if (_ws_avatar_worker) {
+        _ws_avatar_worker->stop();
+        _ws_avatar_worker = nullptr;
+    }
+
+    auto worker = std::make_unique<WebsocketAvatarWorker>();
+    _ws_avatar_worker = worker.get();
+    mooncake::GetMooncake().extensionManager()->createAbility(std::move(worker));
 }
 
+void Hal::stopWebSocketAvatarService()
+{
+    if (_ws_avatar_worker) {
+        _ws_avatar_worker->stop();
+        _ws_avatar_worker = nullptr;
+    }
+}
 
 HomeAgentConfig_t Hal::getHomeAgentConfig()
 {

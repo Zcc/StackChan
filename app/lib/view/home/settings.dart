@@ -13,6 +13,7 @@ import 'package:stack_chan/app_state.dart';
 import 'package:stack_chan/view/home/conversation_page.dart';
 import 'package:stack_chan/view/home/mcp_page.dart';
 import 'package:stack_chan/view/popup/user_info_page.dart';
+import 'package:stack_chan/view/popup/home_agent_config.dart';
 
 import '../popup/xiaozhi_welcome_page.dart';
 
@@ -274,7 +275,7 @@ class _SettingsState extends State<Settings> {
 
               //====================== set ======================
               CupertinoListSection.insetGrouped(
-                children: [_buildChangeNameTile()],
+                children: [_buildChangeNameTile(), _buildHomeAgentTile()],
               ),
 
               //====================== AIset ======================
@@ -467,6 +468,22 @@ class _SettingsState extends State<Settings> {
       leading: _buildSectionIcon(
         iconPath: "assets/wifi.svg",
         color: CupertinoColors.activeBlue,
+      ),
+      trailing: _buildChevronIcon(),
+    );
+  }
+
+  Widget _buildHomeAgentTile() {
+    return CupertinoListTile(
+      title: const Text("HomeAgent Relay"),
+      onTap: () {
+        if (_checkDeviceBinding()) {
+          _navigateToPage(const HomeAgentConfigPage());
+        }
+      },
+      leading: _buildSectionIcon(
+        iconPath: "assets/network.badge.shield.half.filled.svg",
+        color: CupertinoColors.systemCyan.resolveFrom(context),
       ),
       trailing: _buildChevronIcon(),
     );

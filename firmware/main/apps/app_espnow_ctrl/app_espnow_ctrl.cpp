@@ -256,5 +256,5 @@ void AppEspnowControl::onClose()
     view::destroy_home_indicator();
     view::destroy_status_bar();
 
-    GetHAL().requestWarmReboot(2);
+    GetHAL().requestWarmReboot(3);
 }

@@ -121,5 +121,5 @@ void AppAppCenter::onClose()
     view::destroy_home_indicator();
     view::destroy_status_bar();
 
-    GetHAL().requestWarmReboot(3);
+    GetHAL().requestWarmReboot(4);
 }

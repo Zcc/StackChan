@@ -27,3 +27,11 @@ Endpoints:
 ```
 
 Both sides connect outbound. The relay forwards binary and text WebSocket messages between the paired device and agent bridge.
+
+Status endpoint:
+
+```bash
+curl -H 'Authorization: replace-me' https://relay.example.com/status
+```
+
+It returns the paired device/agent connection state for each `deviceId`.

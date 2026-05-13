@@ -35,6 +35,7 @@ type bridge struct {
 	relayURL string
 	deviceID string
 	token    string
+	apiToken string
 
 	mu           sync.RWMutex
 	conn         *websocket.Conn
@@ -50,24 +51,28 @@ func main() {
 	deviceID := flag.String("device-id", env("STACKCHAN_DEVICE_ID", ""), "StackChan device id")
 	addr := flag.String("addr", env("STACKCHAN_BRIDGE_ADDR", "127.0.0.1:8790"), "local HTTP API listen address")
 	token := flag.String("token", env("STACKCHAN_RELAY_TOKEN", ""), "relay authorization token")
+	apiToken := flag.String("api-token", env("STACKCHAN_BRIDGE_TOKEN", ""), "optional local HTTP API bearer token")
 	flag.Parse()
 
 	if *deviceID == "" {
 		log.Fatal("device id is required")
 	}
 
-	b := &bridge{relayURL: *relay, deviceID: *deviceID, token: *token}
+	b := &bridge{relayURL: *relay, deviceID: *deviceID, token: *token, apiToken: *apiToken}
 	go b.connectLoop(context.Background())
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
-	http.HandleFunc("/status", b.handleStatus)
-	http.HandleFunc("/message", b.handleMessage)
-	http.HandleFunc("/motion", b.handleMotion)
-	http.HandleFunc("/avatar", b.handleAvatar)
-	http.HandleFunc("/dance", b.handleDance)
-	http.HandleFunc("/camera/start", b.handleCameraStart)
-	http.HandleFunc("/camera/stop", b.handleCameraStop)
-	http.HandleFunc("/snapshot", b.handleSnapshot)
+	http.HandleFunc("/status", b.withAuth(b.handleStatus))
+	http.HandleFunc("/say", b.withAuth(b.handleMessage))
+	http.HandleFunc("/message", b.withAuth(b.handleMessage))
+	http.HandleFunc("/look", b.withAuth(b.handleLook))
+	http.HandleFunc("/motion", b.withAuth(b.handleMotion))
+	http.HandleFunc("/avatar", b.withAuth(b.handleAvatar))
+	http.HandleFunc("/dance", b.withAuth(b.handleDance))
+	http.HandleFunc("/camera/start", b.withAuth(b.handleCameraStart))
+	http.HandleFunc("/camera/stop", b.withAuth(b.handleCameraStop))
+	http.HandleFunc("/snapshot", b.withAuth(b.handleSnapshot))
+	http.HandleFunc("/snapshot/latest", b.withAuth(b.handleLatestSnapshot))
 
 	log.Printf("home-agent bridge listening on http://%s", *addr)
 	log.Fatal(http.ListenAndServe(*addr, nil))
@@ -198,6 +203,16 @@ func (b *bridge) sendPacket(typeID byte, payload []byte) error {
 	return conn.WriteMessage(websocket.BinaryMessage, buf.Bytes())
 }
 
+func (b *bridge) withAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if b.apiToken != "" && r.Header.Get("Authorization") != "Bearer "+b.apiToken {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
 func (b *bridge) handleStatus(w http.ResponseWriter, r *http.Request) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -207,6 +222,7 @@ func (b *bridge) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"lastSeen":        b.lastSeen.Format(time.RFC3339),
 		"hasSnapshot":     len(b.lastSnapshot) > 0,
 		"snapshotByteLen": len(b.lastSnapshot),
+		"relayUrl":        b.relayURL,
 	})
 }
 
@@ -223,6 +239,31 @@ func (b *bridge) handleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	payload, _ := json.Marshal(req)
 	respondErr(w, b.sendPacket(textMessage, payload))
+}
+
+func (b *bridge) handleLook(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Yaw   int `json:"yaw"`
+		Pitch int `json:"pitch"`
+		Speed int `json:"speed"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Speed <= 0 {
+		req.Speed = 500
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"yawServo": map[string]any{
+			"angle": req.Yaw,
+			"speed": req.Speed,
+		},
+		"pitchServo": map[string]any{
+			"angle": req.Pitch,
+			"speed": req.Speed,
+		},
+	})
+	respondErr(w, b.sendPacket(controlMotion, payload))
 }
 
 func (b *bridge) handleMotion(w http.ResponseWriter, r *http.Request) {
@@ -255,6 +296,18 @@ func (b *bridge) handleCameraStart(w http.ResponseWriter, r *http.Request) {
 
 func (b *bridge) handleCameraStop(w http.ResponseWriter, r *http.Request) {
 	respondErr(w, b.sendPacket(stopCameraStream, nil))
+}
+
+func (b *bridge) handleLatestSnapshot(w http.ResponseWriter, r *http.Request) {
+	b.mu.RLock()
+	img := append([]byte(nil), b.lastSnapshot...)
+	b.mu.RUnlock()
+	if len(img) == 0 {
+		http.Error(w, "no snapshot cached", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	_, _ = w.Write(img)
 }
 
 func (b *bridge) handleSnapshot(w http.ResponseWriter, r *http.Request) {

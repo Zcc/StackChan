@@ -249,6 +249,7 @@ public:
     void setHomeAgentConfig(const HomeAgentConfig_t& config);
     void resetHomeAgentConfig();
     void startWebSocketAvatarService(std::function<void(std::string_view)> onStartLog);
+    void stopWebSocketAvatarService();
 
     /* ----------------------------------- IMU ---------------------------------- */
     uitk::Signal<ImuMotionEvent> onImuMotionEvent;

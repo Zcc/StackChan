@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"log"
 	"net/http"
@@ -12,8 +13,12 @@ import (
 )
 
 type peer struct {
-	conn *websocket.Conn
-	send chan outbound
+	conn      *websocket.Conn
+	send      chan outbound
+	role      string
+	deviceID  string
+	connected time.Time
+	lastSeen  time.Time
 }
 
 type outbound struct {
@@ -38,6 +43,7 @@ func main() {
 
 	http.HandleFunc("/ws", handleWS)
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+	http.HandleFunc("/status", handleStatus)
 
 	log.Printf("home-agent relay listening on %s", *addr)
 	log.Fatal(http.ListenAndServe(*addr, nil))
@@ -65,7 +71,14 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := &peer{conn: conn, send: make(chan outbound, 64)}
+	p := &peer{
+		conn:      conn,
+		send:      make(chan outbound, 64),
+		role:      role,
+		deviceID:  deviceID,
+		connected: time.Now(),
+		lastSeen:  time.Now(),
+	}
 	register(deviceID, role, p)
 	log.Printf("%s connected: %s", role, deviceID)
 
@@ -145,6 +158,7 @@ func readLoop(deviceID, role string, p *peer) {
 		if err != nil {
 			return
 		}
+		p.lastSeen = time.Now()
 		if dst := targetPeer(deviceID, role); dst != nil {
 			select {
 			case dst.send <- outbound{messageType: messageType, data: append([]byte(nil), data...)}:
@@ -153,6 +167,43 @@ func readLoop(deviceID, role string, p *peer) {
 			}
 		}
 	}
+}
+
+func handleStatus(w http.ResponseWriter, r *http.Request) {
+	if want := os.Getenv("STACKCHAN_RELAY_TOKEN"); want != "" && r.Header.Get("Authorization") != want {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	type peerState struct {
+		Connected bool   `json:"connected"`
+		Since     string `json:"since,omitempty"`
+		LastSeen  string `json:"lastSeen,omitempty"`
+	}
+	type roomState struct {
+		Device peerState `json:"device"`
+		Agent  peerState `json:"agent"`
+	}
+
+	roomsMu.Lock()
+	out := map[string]roomState{}
+	for deviceID, room := range rooms {
+		state := roomState{}
+		if room.device != nil {
+			state.Device = peerState{Connected: true, Since: room.device.connected.Format(time.RFC3339), LastSeen: room.device.lastSeen.Format(time.RFC3339)}
+		}
+		if room.agent != nil {
+			state.Agent = peerState{Connected: true, Since: room.agent.connected.Format(time.RFC3339), LastSeen: room.agent.lastSeen.Format(time.RFC3339)}
+		}
+		out[deviceID] = state
+	}
+	roomsMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"rooms": out,
+		"count": len(out),
+	})
 }
 
 func writeLoop(p *peer) {
