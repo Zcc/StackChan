@@ -7,3 +7,4 @@ tools/ble_config_homeagent
 tools/.env.local
 tools/home-agent-relay/.env.local
 tools/home-agent-bridge/.env.local
+tools/node_modules/

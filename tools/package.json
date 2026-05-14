@@ -1,0 +1,11 @@
+{
+  "name": "stackchan-home-agent-tools",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "check:ws-control": "node --check ws_control.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
