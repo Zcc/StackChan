@@ -172,3 +172,34 @@ func (b *bridge) sendMicPacket(typeID byte, payload []byte) error {
 	}
 	return b.sendPacket(typeID, payload)
 }
+
+func (b *bridge) handleMicStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if b.mic == nil {
+		b.mic = newMicState()
+	}
+	streamID := b.mic.currentStreamID()
+	if streamID == "" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	payload, _ := json.Marshal(map[string]string{"stream_id": streamID})
+	_ = b.sendMicPacket(micStreamStop, payload)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"stream_id": streamID, "stopping": "true"})
+}
+
+func (b *bridge) handleMicStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if b.mic == nil {
+		b.mic = newMicState()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(b.mic.snapshot())
+}

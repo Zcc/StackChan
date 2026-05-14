@@ -78,3 +78,50 @@ func (b *bridge) startMicForTest(t *testing.T, body string) micStartTestResult {
 	}
 	return res
 }
+
+func TestHandleMicStopWhenIdle(t *testing.T) {
+	b := newTestBridge()
+	req := httptest.NewRequest(http.MethodPost, "/mic/stop", nil)
+	w := httptest.NewRecorder()
+	b.handleMicStop(w, req)
+	if w.Code != http.StatusOK && w.Code != http.StatusNoContent {
+		t.Fatalf("stop while idle should be 200/204, got %d", w.Code)
+	}
+}
+
+func TestHandleMicStopWhenActive(t *testing.T) {
+	b := newTestBridge()
+	_ = b.startMicForTest(t, `{}`)
+	req := httptest.NewRequest(http.MethodPost, "/mic/stop", nil)
+	w := httptest.NewRecorder()
+	b.handleMicStop(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("stop want 200, got %d", w.Code)
+	}
+}
+
+func TestHandleMicStatusReflectsLifecycle(t *testing.T) {
+	b := newTestBridge()
+	{
+		req := httptest.NewRequest(http.MethodGet, "/mic/status", nil)
+		w := httptest.NewRecorder()
+		b.handleMicStatus(w, req)
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"active":false`) {
+			t.Fatalf("want inactive, got %s", w.Body.String())
+		}
+	}
+	r := b.startMicForTest(t, `{}`)
+	b.mic.markStarted(getStreamIDFromBody(r.Body), time.Now())
+	req := httptest.NewRequest(http.MethodGet, "/mic/status", nil)
+	w := httptest.NewRecorder()
+	b.handleMicStatus(w, req)
+	if !strings.Contains(w.Body.String(), `"active":true`) {
+		t.Fatalf("want active, got %s", w.Body.String())
+	}
+}
+
+func getStreamIDFromBody(s string) string {
+	var r micStartResp
+	_ = json.Unmarshal([]byte(s), &r)
+	return r.StreamID
+}
