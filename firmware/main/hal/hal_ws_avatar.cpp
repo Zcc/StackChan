@@ -128,14 +128,14 @@ public:
         // 设置回调
         _websocket->OnConnected([this]() {
             ESP_LOGI(_tag.c_str(), "Connected to server!");
-            // GetHAL().onWsLog.emit(CommonLogLevel::Info, "Server connected");
+            GetHAL().onWsLog.emit(CommonLogLevel::Info, _home_agent_enabled ? "Relay connected" : "Server connected");
             _last_heartbeat_time = GetHAL().millis();
             _websocket->Send("{\"type\":\"hello\", \"msg\":\"Hello from StackChan!\"}");
         });
 
         _websocket->OnDisconnected([this]() {
             ESP_LOGI(_tag.c_str(), "Disconnected!");
-            // GetHAL().onWsLog.emit(CommonLogLevel::Error, "Server disconnected");
+            GetHAL().onWsLog.emit(CommonLogLevel::Error, _home_agent_enabled ? "Relay disconnected" : "Server disconnected");
         });
 
         _websocket->OnData([this](const char* data, size_t len, bool binary) {
