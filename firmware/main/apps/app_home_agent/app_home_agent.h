@@ -40,9 +40,6 @@ private:
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Container> _hud_dot;
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Label> _hud_title;
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Label> _hud_wifi;
-    std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Container> _hud_relay_chip;
-    std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Container> _hud_agent_chip;
-    std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Container> _hud_camera_chip;
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Label> _hud_relay;
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Label> _hud_agent;
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Label> _hud_camera;
@@ -56,7 +53,7 @@ private:
     void show_agent_message(const std::string& name, const std::string& content);
     void create_hud(bool configured, bool networkReady);
     void update_hud();
-    void set_hud_chip(smooth_ui_toolkit::lvgl_cpp::Container* chip, smooth_ui_toolkit::lvgl_cpp::Label* label, const std::string& text, bool online);
+    void set_hud_icon(smooth_ui_toolkit::lvgl_cpp::Label* label, const std::string& icon, bool online);
     void set_agent_card(const std::string& label, const std::string& text, bool accent = false);
     std::string wifi_status_text() const;
     void check_auto_angle_sync_mode();

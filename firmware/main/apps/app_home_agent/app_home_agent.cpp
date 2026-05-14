@@ -126,9 +126,6 @@ void AppHomeAgent::onClose()
         _hud_camera.reset();
         _hud_agent.reset();
         _hud_relay.reset();
-        _hud_camera_chip.reset();
-        _hud_agent_chip.reset();
-        _hud_relay_chip.reset();
         _hud_wifi.reset();
         _hud_title.reset();
         _hud_dot.reset();
@@ -266,37 +263,16 @@ void AppHomeAgent::create_hud(bool configured, bool networkReady)
     _hud_wifi->setTextColor(lv_color_hex(0xF0ABFC));
     _hud_wifi->align(LV_ALIGN_RIGHT_MID, -8, 0);
 
-    _hud_relay_chip = std::make_unique<Container>(lv_screen_active());
-    _hud_agent_chip = std::make_unique<Container>(lv_screen_active());
-    _hud_camera_chip = std::make_unique<Container>(lv_screen_active());
-
-    auto setup_chip = [](Container* chip, int y) {
-        chip->setSize(80, 19);
-        chip->align(LV_ALIGN_TOP_RIGHT, -9, y);
-        chip->setBgColor(lv_color_hex(0x090B16));
-        chip->setBgOpa(LV_OPA_80);
-        chip->setBorderWidth(1);
-        chip->setBorderColor(lv_color_hex(0x14B8A6));
-        chip->setRadius(5);
-        chip->setPadding(0, 0, 0, 0);
-        chip->removeFlag(LV_OBJ_FLAG_SCROLLABLE);
-        chip->addFlag(LV_OBJ_FLAG_FLOATING);
-    };
-
-    setup_chip(_hud_relay_chip.get(), 34);
-    setup_chip(_hud_agent_chip.get(), 58);
-    setup_chip(_hud_camera_chip.get(), 82);
-
-    _hud_relay = std::make_unique<Label>(_hud_relay_chip->get());
-    _hud_agent = std::make_unique<Label>(_hud_agent_chip->get());
-    _hud_camera = std::make_unique<Label>(_hud_camera_chip->get());
+    _hud_relay = std::make_unique<Label>(lv_screen_active());
+    _hud_agent = std::make_unique<Label>(lv_screen_active());
+    _hud_camera = std::make_unique<Label>(lv_screen_active());
 
     _hud_relay->setTextFont(&font_awesome_20_4);
     _hud_agent->setTextFont(&font_awesome_20_4);
     _hud_camera->setTextFont(&font_awesome_20_4);
-    _hud_relay->align(LV_ALIGN_CENTER, 0, 0);
-    _hud_agent->align(LV_ALIGN_CENTER, 0, 0);
-    _hud_camera->align(LV_ALIGN_CENTER, 0, 0);
+    _hud_relay->align(LV_ALIGN_TOP_RIGHT, -15, 34);
+    _hud_agent->align(LV_ALIGN_TOP_RIGHT, -15, 60);
+    _hud_camera->align(LV_ALIGN_TOP_RIGHT, -15, 86);
 
     _agent_card = std::make_unique<Container>(lv_screen_active());
     _agent_card->setSize(292, 42);
@@ -332,9 +308,9 @@ void AppHomeAgent::update_hud()
         return;
     }
 
-    set_hud_chip(_hud_relay_chip.get(), _hud_relay.get(), FONT_AWESOME_LINK, _relay_online);
-    set_hud_chip(_hud_agent_chip.get(), _hud_agent.get(), FONT_AWESOME_USER_ROBOT, _agent_seen);
-    set_hud_chip(_hud_camera_chip.get(), _hud_camera.get(), FONT_AWESOME_CAMERA, _camera_active);
+    set_hud_icon(_hud_relay.get(), FONT_AWESOME_LINK, _relay_online);
+    set_hud_icon(_hud_agent.get(), FONT_AWESOME_USER_ROBOT, _agent_seen);
+    set_hud_icon(_hud_camera.get(), FONT_AWESOME_CAMERA, _camera_active);
 
     auto wifi = GetHAL().getWifiStatus();
     bool wifi_online = wifi != WifiStatus::None;
@@ -343,14 +319,12 @@ void AppHomeAgent::update_hud()
     _hud_dot->setBgColor(lv_color_hex(_relay_online ? 0x14B8A6 : 0xFF5577));
 }
 
-void AppHomeAgent::set_hud_chip(Container* chip, Label* label, const std::string& text, bool online)
+void AppHomeAgent::set_hud_icon(Label* label, const std::string& icon, bool online)
 {
-    if (!chip || !label) {
+    if (!label) {
         return;
     }
-    chip->setBorderColor(lv_color_hex(online ? 0x14B8A6 : 0x334155));
-    chip->setBgColor(lv_color_hex(online ? 0x091722 : 0x10121F));
-    label->setText(text);
+    label->setText(icon);
     label->setTextColor(lv_color_hex(online ? 0x5EEAD4 : 0x64748B));
 }
 
