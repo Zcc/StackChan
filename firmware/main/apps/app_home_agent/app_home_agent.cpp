@@ -126,12 +126,16 @@ void AppHomeAgent::onClose()
     {
         LvglLockGuard lock;
         GetStackChan().resetAvatar();
-        _hud_wifi.reset();
         _hud_camera.reset();
         _hud_agent.reset();
         _hud_relay.reset();
+        _hud_camera_chip.reset();
+        _hud_agent_chip.reset();
+        _hud_relay_chip.reset();
+        _hud_wifi.reset();
         _hud_title.reset();
-        _hud_panel.reset();
+        _hud_dot.reset();
+        _hud_topbar.reset();
         _video_window.reset();
         GetHAL().stopWebSocketAvatarService();
 
@@ -234,38 +238,68 @@ void AppHomeAgent::show_agent_message(const std::string& name, const std::string
 
 void AppHomeAgent::create_hud(bool configured, bool networkReady)
 {
-    _hud_panel = std::make_unique<Container>(lv_screen_active());
-    _hud_panel->setSize(124, 104);
-    _hud_panel->align(LV_ALIGN_TOP_RIGHT, -7, 24);
-    _hud_panel->setBgColor(lv_color_hex(0x070A18));
-    _hud_panel->setBgOpa(LV_OPA_80);
-    _hud_panel->setBorderWidth(1);
-    _hud_panel->setBorderColor(lv_color_hex(0x00E5FF));
-    _hud_panel->setRadius(5);
-    _hud_panel->setPadding(5, 5, 4, 4);
-    _hud_panel->removeFlag(LV_OBJ_FLAG_SCROLLABLE);
-    _hud_panel->addFlag(LV_OBJ_FLAG_FLOATING);
+    _hud_topbar = std::make_unique<Container>(lv_screen_active());
+    _hud_topbar->setSize(320, 24);
+    _hud_topbar->align(LV_ALIGN_TOP_MID, 0, 0);
+    _hud_topbar->setBgColor(lv_color_hex(0x070A18));
+    _hud_topbar->setBgOpa(LV_OPA_80);
+    _hud_topbar->setBorderWidth(0);
+    _hud_topbar->setRadius(0);
+    _hud_topbar->setPadding(0, 0, 0, 0);
+    _hud_topbar->removeFlag(LV_OBJ_FLAG_SCROLLABLE);
+    _hud_topbar->addFlag(LV_OBJ_FLAG_FLOATING);
 
-    _hud_title = std::make_unique<Label>(_hud_panel->get());
-    _hud_title->setText("HOME");
+    _hud_dot = std::make_unique<Container>(_hud_topbar->get());
+    _hud_dot->setSize(7, 7);
+    _hud_dot->setRadius(7);
+    _hud_dot->setBgColor(lv_color_hex(0xFF5577));
+    _hud_dot->setBorderWidth(0);
+    _hud_dot->setPadding(0, 0, 0, 0);
+    _hud_dot->removeFlag(LV_OBJ_FLAG_SCROLLABLE);
+    _hud_dot->align(LV_ALIGN_LEFT_MID, 10, 0);
+
+    _hud_title = std::make_unique<Label>(_hud_topbar->get());
+    _hud_title->setText("HOME_AGENT");
     _hud_title->setTextFont(&lv_font_montserrat_16);
-    _hud_title->setTextColor(lv_color_hex(0x00E5FF));
-    _hud_title->align(LV_ALIGN_TOP_LEFT, 2, 0);
+    _hud_title->setTextColor(lv_color_hex(0xE0FFF9));
+    _hud_title->align(LV_ALIGN_LEFT_MID, 22, 0);
 
-    _hud_relay = std::make_unique<Label>(_hud_panel->get());
-    _hud_agent = std::make_unique<Label>(_hud_panel->get());
-    _hud_camera = std::make_unique<Label>(_hud_panel->get());
-    _hud_wifi = std::make_unique<Label>(_hud_panel->get());
+    _hud_wifi = std::make_unique<Label>(_hud_topbar->get());
+    _hud_wifi->setTextFont(&lv_font_montserrat_16);
+    _hud_wifi->setTextColor(lv_color_hex(0xF0ABFC));
+    _hud_wifi->align(LV_ALIGN_RIGHT_MID, -8, 0);
+
+    _hud_relay_chip = std::make_unique<Container>(lv_screen_active());
+    _hud_agent_chip = std::make_unique<Container>(lv_screen_active());
+    _hud_camera_chip = std::make_unique<Container>(lv_screen_active());
+
+    auto setup_chip = [](Container* chip, int y) {
+        chip->setSize(80, 19);
+        chip->align(LV_ALIGN_TOP_RIGHT, -9, y);
+        chip->setBgColor(lv_color_hex(0x090B16));
+        chip->setBgOpa(LV_OPA_80);
+        chip->setBorderWidth(1);
+        chip->setBorderColor(lv_color_hex(0x14B8A6));
+        chip->setRadius(5);
+        chip->setPadding(0, 0, 0, 0);
+        chip->removeFlag(LV_OBJ_FLAG_SCROLLABLE);
+        chip->addFlag(LV_OBJ_FLAG_FLOATING);
+    };
+
+    setup_chip(_hud_relay_chip.get(), 34);
+    setup_chip(_hud_agent_chip.get(), 58);
+    setup_chip(_hud_camera_chip.get(), 82);
+
+    _hud_relay = std::make_unique<Label>(_hud_relay_chip->get());
+    _hud_agent = std::make_unique<Label>(_hud_agent_chip->get());
+    _hud_camera = std::make_unique<Label>(_hud_camera_chip->get());
 
     _hud_relay->setTextFont(&lv_font_montserrat_16);
     _hud_agent->setTextFont(&lv_font_montserrat_16);
     _hud_camera->setTextFont(&lv_font_montserrat_16);
-    _hud_wifi->setTextFont(&lv_font_montserrat_16);
-
-    _hud_relay->align(LV_ALIGN_TOP_LEFT, 2, 20);
-    _hud_agent->align(LV_ALIGN_TOP_LEFT, 2, 40);
-    _hud_camera->align(LV_ALIGN_TOP_LEFT, 2, 60);
-    _hud_wifi->align(LV_ALIGN_TOP_LEFT, 2, 80);
+    _hud_relay->align(LV_ALIGN_CENTER, 0, 0);
+    _hud_agent->align(LV_ALIGN_CENTER, 0, 0);
+    _hud_camera->align(LV_ALIGN_CENTER, 0, 0);
 
     _relay_online = configured && networkReady;
     update_hud();
@@ -273,40 +307,44 @@ void AppHomeAgent::create_hud(bool configured, bool networkReady)
 
 void AppHomeAgent::update_hud()
 {
-    if (!_hud_panel) {
+    if (!_hud_topbar) {
         return;
     }
 
-    set_hud_chip(_hud_relay.get(), _relay_online ? "RLY  ON" : "RLY  --", _relay_online);
-    set_hud_chip(_hud_agent.get(), _agent_seen ? "AGT  SEEN" : "AGT  WAIT", _agent_seen);
-    set_hud_chip(_hud_camera.get(), _camera_active ? "CAM  LIVE" : "CAM  IDLE", _camera_active);
+    set_hud_chip(_hud_relay_chip.get(), _hud_relay.get(), _relay_online ? "RLY" : "RLY--", _relay_online);
+    set_hud_chip(_hud_agent_chip.get(), _hud_agent.get(), _agent_seen ? "AGT" : "AGT--", _agent_seen);
+    set_hud_chip(_hud_camera_chip.get(), _hud_camera.get(), _camera_active ? "CAM" : "CAM--", _camera_active);
 
     auto wifi = GetHAL().getWifiStatus();
     bool wifi_online = wifi != WifiStatus::None;
-    set_hud_chip(_hud_wifi.get(), wifi_status_text(), wifi_online);
+    _hud_wifi->setText(wifi_status_text());
+    _hud_wifi->setTextColor(lv_color_hex(wifi_online ? 0xF0ABFC : 0xFF5577));
+    _hud_dot->setBgColor(lv_color_hex(_relay_online ? 0x14B8A6 : 0xFF5577));
 }
 
-void AppHomeAgent::set_hud_chip(Label* label, const std::string& text, bool online)
+void AppHomeAgent::set_hud_chip(Container* chip, Label* label, const std::string& text, bool online)
 {
-    if (!label) {
+    if (!chip || !label) {
         return;
     }
+    chip->setBorderColor(lv_color_hex(online ? 0x14B8A6 : 0xFF66C4));
+    chip->setBgColor(lv_color_hex(online ? 0x091722 : 0x160B18));
     label->setText(text);
-    label->setTextColor(lv_color_hex(online ? 0x7CFFB2 : 0xFF5577));
+    label->setTextColor(lv_color_hex(online ? 0x5EEAD4 : 0xFBBF24));
 }
 
 std::string AppHomeAgent::wifi_status_text() const
 {
     switch (GetHAL().getWifiStatus()) {
         case WifiStatus::High:
-            return "WIFI HIGH";
+            return "Wi-Fi";
         case WifiStatus::Medium:
-            return "WIFI MID";
+            return "Wi-Fi";
         case WifiStatus::Low:
-            return "WIFI LOW";
+            return "Wi-Fi?";
         case WifiStatus::None:
         default:
-            return "WIFI --";
+            return "No Wi-Fi";
     }
 }
 

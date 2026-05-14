@@ -37,12 +37,16 @@ private:
     bool _agent_seen               = false;
     bool _camera_active            = false;
     std::unique_ptr<view::VideoWindow> _video_window;
-    std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Container> _hud_panel;
+    std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Container> _hud_topbar;
+    std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Container> _hud_dot;
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Label> _hud_title;
+    std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Label> _hud_wifi;
+    std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Container> _hud_relay_chip;
+    std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Container> _hud_agent_chip;
+    std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Container> _hud_camera_chip;
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Label> _hud_relay;
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Label> _hud_agent;
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Label> _hud_camera;
-    std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Label> _hud_wifi;
 
     void attach_avatar();
     void bind_ws_events();
@@ -50,7 +54,7 @@ private:
     void show_agent_message(const std::string& name, const std::string& content);
     void create_hud(bool configured, bool networkReady);
     void update_hud();
-    void set_hud_chip(smooth_ui_toolkit::lvgl_cpp::Label* label, const std::string& text, bool online);
+    void set_hud_chip(smooth_ui_toolkit::lvgl_cpp::Container* chip, smooth_ui_toolkit::lvgl_cpp::Label* label, const std::string& text, bool online);
     std::string wifi_status_text() const;
     void check_auto_angle_sync_mode();
 };
