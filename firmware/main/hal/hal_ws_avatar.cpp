@@ -59,6 +59,41 @@ public:
         StartAudioStream  = 0x18,
         StopAudioStream   = 0x19,
         AimedTakePhoto    = 0x1A,
+
+        // HomeAgent 扩展能力 (0x20+)
+        GetDeviceInfo     = 0x20,  // 双向: 请求/响应 JSON {mac,fw,wifi,battery,brightness,volume,...}
+        GetBatteryStatus  = 0x21,  // 双向: 请求/响应 JSON {level,charging}
+        SetBrightness     = 0x22,  // 入站: JSON {value:0-100}
+        SetVolume         = 0x23,  // 入站: JSON {value:0-100}
+        RebootDevice      = 0x24,  // 入站: 无 payload
+        FactoryReset      = 0x25,  // 入站: 无 payload
+        SetRgbLed         = 0x26,  // 入站: JSON [{i,r,g,b},...] 或 {leds:[...]}
+        ShowRgbColor      = 0x27,  // 入站: JSON {r,g,b} 或 {color:"#RRGGBB"}
+        ImuEvent          = 0x28,  // 出站: JSON {event:"shake|pickup"}
+        HeadTouchEvent    = 0x29,  // 出站: JSON {gesture:"press|release|swipeForward|swipeBackward"}
+        ScreenTouchEvent  = 0x2A,  // 出站 stub
+        ButtonEvent       = 0x2B,  // 出站 stub
+
+        IrSend            = 0x30,  // 入站 stub
+        IrLearnStart      = 0x31,  // 入站 stub
+        IrEvent           = 0x32,  // 出站 stub
+        NfcRead           = 0x33,  // 入站 stub
+        NfcWrite          = 0x34,  // 入站 stub
+        NfcEvent          = 0x35,  // 出站 stub
+        PlayAudio         = 0x36,  // 入站 stub
+        MicStreamStart    = 0x37,  // 入站 stub
+        MicStreamStop     = 0x38,  // 入站 stub
+        MicAudio          = 0x39,  // 出站 stub (PCM/Opus)
+        ScreenCapture     = 0x3A,  // 入站/响应 stub
+        SdList            = 0x3B,  // 入站 stub
+        SdRead            = 0x3C,  // 入站 stub
+        SdWrite           = 0x3D,  // 入站 stub
+        ServoFeedback     = 0x3E,  // 出站 stub
+        ProximityLight    = 0x3F,  // 出站 stub
+        GetDriverHealth   = 0x40,  // 双向: 请求/响应 JSON {drivers:[...]}
+
+        // 通用错误响应 - 桥可识别此 type 来知道某能力未实现
+        CapabilityError   = 0x4F,
     };
 
     struct ReceivedMessage {
@@ -98,6 +133,47 @@ public:
             ESP_LOGI(_tag.c_str(), "Sending EndCall");
             sendPacket(DataType::EndCall, nullptr, 0);
         });
+
+        // HomeAgent: 将 IMU 动作事件透传到 relay/agent
+        GetHAL().onImuMotionEvent.connect([this](ImuMotionEvent event) {
+            if (!isConnected() || event == ImuMotionEvent::None) {
+                return;
+            }
+            const char* name = (event == ImuMotionEvent::Shake)  ? "shake"
+                               : (event == ImuMotionEvent::PickUp) ? "pickup"
+                                                                   : "unknown";
+            std::string json = std::string("{\"event\":\"") + name + "\",\"ts\":" +
+                               std::to_string(GetHAL().millis()) + "}";
+            sendPacket(DataType::ImuEvent, (const uint8_t*)json.c_str(), json.size());
+        });
+
+        // HomeAgent: 将头顶触摸手势透传到 relay/agent
+        GetHAL().onHeadPetGesture.connect([this](HeadPetGesture gesture) {
+            if (!isConnected() || gesture == HeadPetGesture::None) {
+                return;
+            }
+            const char* name = (gesture == HeadPetGesture::Press)         ? "press"
+                               : (gesture == HeadPetGesture::Release)       ? "release"
+                               : (gesture == HeadPetGesture::SwipeForward)  ? "swipeForward"
+                               : (gesture == HeadPetGesture::SwipeBackward) ? "swipeBackward"
+                                                                            : "unknown";
+            std::string json = std::string("{\"gesture\":\"") + name + "\",\"ts\":" +
+                               std::to_string(GetHAL().millis()) + "}";
+            sendPacket(DataType::HeadTouchEvent, (const uint8_t*)json.c_str(), json.size());
+        });
+
+        GetHAL().onScreenTouchEvent.connect([this](const ScreenTouchEvent_t& event) {
+            if (!isConnected()) {
+                return;
+            }
+            static bool last_pressed = false;
+            const char* state = event.pressed && !last_pressed ? "down" : (!event.pressed && last_pressed ? "up" : "move");
+            last_pressed = event.pressed;
+            std::string json = std::string("{\"state\":\"") + state + "\",\"x\":" + std::to_string(event.x) +
+                               ",\"y\":" + std::to_string(event.y) + ",\"pressed\":" +
+                               (event.pressed ? "true" : "false") + ",\"ts\":" + std::to_string(event.tsMs) + "}";
+            sendPacket(DataType::ScreenTouchEvent, (const uint8_t*)json.c_str(), json.size());
+        });
     }
 
     void connect()
@@ -130,12 +206,14 @@ public:
             ESP_LOGI(_tag.c_str(), "Connected to server!");
             GetHAL().onWsLog.emit(CommonLogLevel::Info, _home_agent_enabled ? "Relay connected" : "Server connected");
             _last_heartbeat_time = GetHAL().millis();
+            setRelayLinkAlive(true);
             _websocket->Send("{\"type\":\"hello\", \"msg\":\"Hello from StackChan!\"}");
         });
 
         _websocket->OnDisconnected([this]() {
             ESP_LOGI(_tag.c_str(), "Disconnected!");
             GetHAL().onWsLog.emit(CommonLogLevel::Error, _home_agent_enabled ? "Relay disconnected" : "Server disconnected");
+            setRelayLinkAlive(false);
         });
 
         _websocket->OnData([this](const char* data, size_t len, bool binary) {
@@ -148,6 +226,7 @@ public:
         if (!_websocket->Connect(_url.c_str())) {
             ESP_LOGE(_tag.c_str(), "Failed to connect");
             GetHAL().onWsLog.emit(CommonLogLevel::Error, "Connect to server Failed");
+            setRelayLinkAlive(false);
         }
         _last_reconnect_attempt = GetHAL().millis();
     }
@@ -170,6 +249,7 @@ public:
                 ESP_LOGE(_tag.c_str(), "Heartbeat timeout!");
                 GetHAL().onWsLog.emit(CommonLogLevel::Error, "Heartbeat Timeout");
                 _last_heartbeat_time = GetHAL().millis();
+                setRelayLinkAlive(false);
                 return;
             }
         }
@@ -282,6 +362,7 @@ public:
                 case DataType::HeartbeatPing: {
                     ESP_LOGI(_tag.c_str(), "HeartbeatPing");
                     _last_heartbeat_time = GetHAL().millis();
+                    setRelayLinkAlive(true);
                     sendPacket(DataType::HeartbeatPong, nullptr, 0);
                     break;
                 }
@@ -376,6 +457,72 @@ public:
                     captureAndSendFrame(DataType::AimedTakePhoto);
                     break;
                 }
+                case DataType::GetDeviceInfo: {
+                    handleGetDeviceInfo();
+                    break;
+                }
+                case DataType::GetBatteryStatus: {
+                    handleGetBatteryStatus();
+                    break;
+                }
+                case DataType::SetBrightness: {
+                    if (msg.data.size() >= 5) {
+                        std::string payload(msg.data.begin() + 5, msg.data.end());
+                        handleSetBrightness(payload);
+                    }
+                    break;
+                }
+                case DataType::SetVolume: {
+                    if (msg.data.size() >= 5) {
+                        std::string payload(msg.data.begin() + 5, msg.data.end());
+                        handleSetVolume(payload);
+                    }
+                    break;
+                }
+                case DataType::RebootDevice: {
+                    ESP_LOGW(_tag.c_str(), "RebootDevice requested by HomeAgent");
+                    GetHAL().reboot();
+                    break;
+                }
+                case DataType::FactoryReset: {
+                    ESP_LOGW(_tag.c_str(), "FactoryReset requested by HomeAgent");
+                    GetHAL().factoryReset();
+                    break;
+                }
+                case DataType::SetRgbLed: {
+                    if (msg.data.size() >= 5) {
+                        std::string payload(msg.data.begin() + 5, msg.data.end());
+                        handleSetRgbLed(payload);
+                    }
+                    break;
+                }
+                case DataType::ShowRgbColor: {
+                    if (msg.data.size() >= 5) {
+                        std::string payload(msg.data.begin() + 5, msg.data.end());
+                        handleShowRgbColor(payload);
+                    }
+                    break;
+                }
+                case DataType::GetDriverHealth: {
+                    handleGetDriverHealth();
+                    break;
+                }
+                // ---- B 类 stub: 协议号已保留，等待硬件驱动实现 ----
+                case DataType::IrSend:
+                case DataType::IrLearnStart:
+                case DataType::NfcRead:
+                case DataType::NfcWrite:
+                case DataType::PlayAudio:
+                case DataType::MicStreamStart:
+                case DataType::MicStreamStop:
+                case DataType::ScreenCapture:
+                case DataType::SdList:
+                case DataType::SdRead:
+                case DataType::SdWrite: {
+                    ESP_LOGW(_tag.c_str(), "Capability 0x%02X not implemented in firmware yet", (int)type);
+                    sendCapabilityError(type, "not_implemented", "capability exists but hardware driver is not implemented");
+                    break;
+                }
                 default:
                     break;
             }
@@ -438,6 +585,16 @@ public:
         _is_streaming = enabled;
     }
 
+    void setRelayLinkAlive(bool alive)
+    {
+        if (_relay_link_alive == alive && _relay_link_initialized) {
+            return;
+        }
+        _relay_link_alive       = alive;
+        _relay_link_initialized = true;
+        GetHAL().onWsRelayLink.emit(alive);
+    }
+
 private:
     std::unique_ptr<WebSocket> _websocket;
     std::string _url;
@@ -446,6 +603,8 @@ private:
     uint32_t _last_heartbeat_time    = 0;
     bool _is_streaming               = false;
     bool _is_video_mode              = false;
+    bool _relay_link_alive           = false;
+    bool _relay_link_initialized     = false;
     std::mutex _mutex;
     std::queue<ReceivedMessage> _msg_queue;
 
@@ -487,6 +646,208 @@ private:
         } else {
             _url = fmt::format("{}/stackChan/ws?deviceType=StackChan", secret_logic::get_server_url());
         }
+    }
+
+    // ---------- HomeAgent 扩展能力实现 ----------
+
+    static std::string ssidOfWifiStatus(WifiStatus s)
+    {
+        switch (s) {
+            case WifiStatus::Low: return "low";
+            case WifiStatus::Medium: return "medium";
+            case WifiStatus::High: return "high";
+            default: return "none";
+        }
+    }
+
+    void handleGetDeviceInfo()
+    {
+        auto& hal = GetHAL();
+        Settings settings(_setting_ns, false);
+        auto deviceName = settings.GetString(_setting_device_name_key, "StackChan");
+
+        ArduinoJson::JsonDocument doc;
+        doc["mac"]        = hal.getFactoryMacString("");
+        doc["deviceName"] = deviceName;
+        doc["firmware"]   = FIRMWARE_VERSION;
+        doc["battery"]    = hal.getBatteryLevel();
+        doc["charging"]   = hal.isBatteryCharging();
+        doc["brightness"] = hal.getBackLightBrightness();
+        doc["volume"]     = hal.getSpeakerVolume();
+        doc["wifiSsid"]   = hal.getCurrentWifiSsid();
+        doc["wifiIp"]     = hal.getWifiIpAddress();
+        doc["wifiSignal"] = ssidOfWifiStatus(hal.getWifiStatus());
+        doc["freeHeap"]   = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
+        doc["psramFree"]  = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+
+        std::string out;
+        ArduinoJson::serializeJson(doc, out);
+        sendPacket(DataType::GetDeviceInfo, (const uint8_t*)out.c_str(), out.size());
+    }
+
+    void handleGetBatteryStatus()
+    {
+        auto& hal = GetHAL();
+        ArduinoJson::JsonDocument doc;
+        doc["level"]    = hal.getBatteryLevel();
+        doc["charging"] = hal.isBatteryCharging();
+        doc["ts"]       = hal.millis();
+        std::string out;
+        ArduinoJson::serializeJson(doc, out);
+        sendPacket(DataType::GetBatteryStatus, (const uint8_t*)out.c_str(), out.size());
+    }
+
+    static const char* capabilityNameForType(DataType type)
+    {
+        switch (type) {
+            case DataType::IrSend: return "ir.send";
+            case DataType::IrLearnStart: return "ir.learn.start";
+            case DataType::NfcRead: return "nfc.read";
+            case DataType::NfcWrite: return "nfc.write";
+            case DataType::PlayAudio: return "audio.play";
+            case DataType::MicStreamStart: return "mic.start";
+            case DataType::MicStreamStop: return "mic.stop";
+            case DataType::ScreenCapture: return "screen.capture";
+            case DataType::SdList: return "sd.list";
+            case DataType::SdRead: return "sd.read";
+            case DataType::SdWrite: return "sd.write";
+            default: return "unknown";
+        }
+    }
+
+    void sendCapabilityError(DataType type, const char* code, const char* message)
+    {
+        ArduinoJson::JsonDocument doc;
+        doc["type"]       = (int)type;
+        doc["capability"] = capabilityNameForType(type);
+        doc["code"]       = code;
+        doc["message"]    = message;
+        doc["ts"]         = GetHAL().millis();
+        doc["details"]    = ArduinoJson::JsonObject();
+        std::string out;
+        ArduinoJson::serializeJson(doc, out);
+        sendPacket(DataType::CapabilityError, (const uint8_t*)out.c_str(), out.size());
+    }
+
+    void handleGetDriverHealth()
+    {
+        auto now = GetHAL().millis();
+        ArduinoJson::JsonDocument doc;
+        auto drivers      = doc["drivers"].to<ArduinoJson::JsonArray>();
+        auto appendDriver = [&](const char* name, bool ready, const char* lastError) {
+            auto d        = drivers.add<ArduinoJson::JsonObject>();
+            d["name"]     = name;
+            d["ready"]    = ready;
+            d["lastError"] = lastError;
+            d["lastTickMs"] = now;
+        };
+
+        appendDriver("ir", false, "driver_unavailable");
+        appendDriver("nfc", false, "driver_unavailable");
+        appendDriver("ambientLight", false, "driver_unavailable");
+
+        std::string out;
+        ArduinoJson::serializeJson(doc, out);
+        sendPacket(DataType::GetDriverHealth, (const uint8_t*)out.c_str(), out.size());
+    }
+
+    void handleSetBrightness(const std::string& payload)
+    {
+        ArduinoJson::JsonDocument doc;
+        if (ArduinoJson::deserializeJson(doc, payload)) return;
+        int value = doc["value"].is<int>() ? doc["value"].as<int>() : -1;
+        if (value < 0 || value > 100) {
+            ESP_LOGW(_tag.c_str(), "SetBrightness invalid value");
+            return;
+        }
+        bool permanent = doc["permanent"].is<bool>() ? doc["permanent"].as<bool>() : false;
+        GetHAL().setBackLightBrightness((uint8_t)value, permanent);
+    }
+
+    void handleSetVolume(const std::string& payload)
+    {
+        ArduinoJson::JsonDocument doc;
+        if (ArduinoJson::deserializeJson(doc, payload)) return;
+        int value = doc["value"].is<int>() ? doc["value"].as<int>() : -1;
+        if (value < 0 || value > 100) {
+            ESP_LOGW(_tag.c_str(), "SetVolume invalid value");
+            return;
+        }
+        bool permanent = doc["permanent"].is<bool>() ? doc["permanent"].as<bool>() : false;
+        GetHAL().setSpeakerVolume((uint8_t)value, permanent);
+    }
+
+    static uint8_t clamp8(int v)
+    {
+        if (v < 0) return 0;
+        if (v > 255) return 255;
+        return (uint8_t)v;
+    }
+
+    void handleSetRgbLed(const std::string& payload)
+    {
+        ArduinoJson::JsonDocument doc;
+        if (ArduinoJson::deserializeJson(doc, payload)) {
+            ESP_LOGW(_tag.c_str(), "SetRgbLed parse failed");
+            return;
+        }
+
+        // 支持 {"leds":[...]} 或裸数组 [...]
+        ArduinoJson::JsonArrayConst arr;
+        if (doc["leds"].is<ArduinoJson::JsonArrayConst>()) {
+            arr = doc["leds"].as<ArduinoJson::JsonArrayConst>();
+        } else if (doc.is<ArduinoJson::JsonArrayConst>()) {
+            arr = doc.as<ArduinoJson::JsonArrayConst>();
+        } else {
+            ESP_LOGW(_tag.c_str(), "SetRgbLed expects leds array");
+            return;
+        }
+
+        auto& hal = GetHAL();
+        for (auto v : arr) {
+            int i = v["i"].is<int>() ? v["i"].as<int>() : -1;
+            if (i < 0 || i > 11) continue;
+            uint8_t r = clamp8(v["r"].is<int>() ? v["r"].as<int>() : 0);
+            uint8_t g = clamp8(v["g"].is<int>() ? v["g"].as<int>() : 0);
+            uint8_t b = clamp8(v["b"].is<int>() ? v["b"].as<int>() : 0);
+            hal.setRgbColor((uint8_t)i, r, g, b);
+        }
+        hal.refreshRgb();
+    }
+
+    void handleShowRgbColor(const std::string& payload)
+    {
+        ArduinoJson::JsonDocument doc;
+        if (ArduinoJson::deserializeJson(doc, payload)) {
+            ESP_LOGW(_tag.c_str(), "ShowRgbColor parse failed");
+            return;
+        }
+        uint8_t r = 0, g = 0, b = 0;
+        if (doc["r"].is<int>()) {
+            r = clamp8(doc["r"].as<int>());
+            g = clamp8(doc["g"].as<int>());
+            b = clamp8(doc["b"].as<int>());
+        } else if (doc["color"].is<std::string>()) {
+            std::string color = doc["color"].as<std::string>();
+            if (color.size() == 7 && color[0] == '#') color = color.substr(1);
+            if (color.size() == 6) {
+                auto hex = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                    return -1;
+                };
+                int rh1 = hex(color[0]), rh2 = hex(color[1]);
+                int gh1 = hex(color[2]), gh2 = hex(color[3]);
+                int bh1 = hex(color[4]), bh2 = hex(color[5]);
+                if (rh1 >= 0 && rh2 >= 0 && gh1 >= 0 && gh2 >= 0 && bh1 >= 0 && bh2 >= 0) {
+                    r = (rh1 << 4) | rh2;
+                    g = (gh1 << 4) | gh2;
+                    b = (bh1 << 4) | bh2;
+                }
+            }
+        }
+        GetHAL().showRgbColor(r, g, b);
     }
 
     void sendPacket(DataType type, const uint8_t* data, size_t len)

@@ -132,6 +132,7 @@ void Hal::updateHeapStatusLog()
 /* -------------------------------------------------------------------------- */
 #include "board/hal_bridge.h"
 #include <stackchan/stackchan.h>
+#include <cstdlib>
 #include <apps/common/common.h>
 #include <assets/assets.h>
 
@@ -281,21 +282,49 @@ uint8_t Hal::getSpeakerVolume()
 
 static void lvgl_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
 {
+    (void)indev;
     hal_bridge::lock();
     auto& bridge_data = hal_bridge::get_data();
 
     // mclog::tagInfo(_tag, "touchpoint: {}, x: {}, y: {}", bridge_data.touchPoint.num, bridge_data.touchPoint.x,
     //                bridge_data.touchPoint.y);
 
-    if (bridge_data.touchPoint.num == 0) {
+    const bool pressed = bridge_data.touchPoint.num != 0;
+    const int x        = bridge_data.touchPoint.x;
+    const int y        = bridge_data.touchPoint.y;
+    if (!pressed) {
         data->state = LV_INDEV_STATE_RELEASED;
     } else {
         data->state   = LV_INDEV_STATE_PRESSED;
-        data->point.x = bridge_data.touchPoint.x;
-        data->point.y = bridge_data.touchPoint.y;
+        data->point.x = x;
+        data->point.y = y;
+    }
+    hal_bridge::unlock();
+
+    static bool last_pressed     = false;
+    static int last_x            = -1;
+    static int last_y            = -1;
+    static uint32_t last_emit_ms = 0;
+    const uint32_t now_ms        = GetHAL().millis();
+
+    const bool moved = pressed && (std::abs(x - last_x) >= 3 || std::abs(y - last_y) >= 3);
+    const bool state_changed = pressed != last_pressed;
+    const bool time_to_emit_move = moved && (now_ms - last_emit_ms >= 60);
+    if (state_changed || time_to_emit_move) {
+        ScreenTouchEvent_t event;
+        event.pressed = pressed;
+        event.x       = x;
+        event.y       = y;
+        event.tsMs    = now_ms;
+        GetHAL().onScreenTouchEvent.emit(event);
+        last_emit_ms = now_ms;
     }
 
-    hal_bridge::unlock();
+    last_pressed = pressed;
+    if (pressed) {
+        last_x = x;
+        last_y = y;
+    }
 }
 
 void Hal::lvgl_init()

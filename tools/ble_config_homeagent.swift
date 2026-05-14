@@ -1,6 +1,6 @@
 #!/usr/bin/env swift
 // BLE tool to configure HomeAgent relay on StackChan
-// Usage: swift ble_config_homeagent.swift [get|set|reset|wifi-list|wifi-remove <index>|wifi-default <index>|wifi-clear]
+// Usage: swift ble_config_homeagent.swift [get|set|reset|wifi-list|wifi-remove <index>|wifi-default <index>|wifi-clear|wifi-set]
 //   get          - read current HomeAgent config
 //   set          - write relay config (uses env vars or defaults below)
 //   reset        - clear HomeAgent config
@@ -8,17 +8,42 @@
 //   wifi-remove  - remove a saved Wi-Fi profile by index
 //   wifi-default - move a Wi-Fi profile to the front of the priority list
 //   wifi-clear   - clear all saved Wi-Fi profiles
+//   wifi-set     - add and connect to a Wi-Fi network (uses WIFI_SSID/WIFI_PASSWORD env)
 
 import Foundation
 import CoreBluetooth
 
 let CONFIG_SERVICE_UUID = CBUUID(string: "e2e5e5e0-1234-5678-1234-56789abcdef0")
+let CONFIG_SERVICE_UUID_ALT = CBUUID(string: "e2e5e5ff-1234-5678-1234-56789abcdef0")
 let CONFIG_CHAR_UUID    = CBUUID(string: "e2e5e5e3-1234-5678-1234-56789abcdef0")
 
 // Config — set via env vars
 let RELAY_URL  = ProcessInfo.processInfo.environment["RELAY_URL"]  ?? ""
 let RELAY_TOKEN = ProcessInfo.processInfo.environment["RELAY_TOKEN"] ?? ""
 let DEVICE_ID  = ProcessInfo.processInfo.environment["DEVICE_ID"]  ?? ""
+let WIFI_SSID     = ProcessInfo.processInfo.environment["WIFI_SSID"]     ?? ""
+let WIFI_PASSWORD = ProcessInfo.processInfo.environment["WIFI_PASSWORD"] ?? ""
+
+func jsonEscape(_ s: String) -> String {
+    var out = ""
+    for c in s {
+        switch c {
+        case "\\": out += "\\\\"
+        case "\"": out += "\\\""
+        case "\n": out += "\\n"
+        case "\r": out += "\\r"
+        case "\t": out += "\\t"
+        default:
+            let scalar = c.unicodeScalars.first!.value
+            if scalar < 0x20 {
+                out += String(format: "\\u%04x", scalar)
+            } else {
+                out.append(c)
+            }
+        }
+    }
+    return out
+}
 
 class BLEConfigurator: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var central: CBCentralManager!
@@ -39,7 +64,7 @@ class BLEConfigurator: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
             return
         }
         print("Scanning for StackChan...")
-        central.scanForPeripherals(withServices: [CONFIG_SERVICE_UUID], options: nil)
+        central.scanForPeripherals(withServices: [CONFIG_SERVICE_UUID, CONFIG_SERVICE_UUID_ALT], options: nil)
     }
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
@@ -54,7 +79,7 @@ class BLEConfigurator: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         print("Connected! Discovering services...")
-        peripheral.discoverServices([CONFIG_SERVICE_UUID])
+        peripheral.discoverServices([CONFIG_SERVICE_UUID, CONFIG_SERVICE_UUID_ALT])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -65,7 +90,7 @@ class BLEConfigurator: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard let services = peripheral.services else { return }
         for svc in services {
-            if svc.uuid == CONFIG_SERVICE_UUID {
+            if svc.uuid == CONFIG_SERVICE_UUID || svc.uuid == CONFIG_SERVICE_UUID_ALT {
                 peripheral.discoverCharacteristics([CONFIG_CHAR_UUID], for: svc)
             }
         }
@@ -130,6 +155,17 @@ class BLEConfigurator: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
             {"cmd":"clearWifiProfiles"}
             """
             print("Clearing Wi-Fi profiles...")
+        case "wifi-set":
+            if WIFI_SSID.isEmpty {
+                print("Error: WIFI_SSID env required for 'wifi-set'")
+                exit(1)
+            }
+            let ssid = jsonEscape(WIFI_SSID)
+            let pw   = jsonEscape(WIFI_PASSWORD)
+            json = """
+            {"cmd":"setWifi","data":{"ssid":"\(ssid)","password":"\(pw)"}}
+            """
+            print("Setting Wi-Fi: \(WIFI_SSID)")
         default:
             json = """
             {"cmd":"getHomeAgent"}
@@ -169,9 +205,9 @@ class BLEConfigurator: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
 
 // Parse action
 let action = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "get"
-let validActions = ["get", "set", "reset", "wifi-list", "wifi-remove", "wifi-default", "wifi-clear"]
+let validActions = ["get", "set", "reset", "wifi-list", "wifi-remove", "wifi-default", "wifi-clear", "wifi-set"]
 guard validActions.contains(action) else {
-    print("Usage: swift ble_config_homeagent.swift [get|set|reset|wifi-list|wifi-remove <index>|wifi-default <index>|wifi-clear]")
+    print("Usage: swift ble_config_homeagent.swift [get|set|reset|wifi-list|wifi-remove <index>|wifi-default <index>|wifi-clear|wifi-set]")
     exit(1)
 }
 

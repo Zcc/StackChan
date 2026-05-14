@@ -41,6 +41,13 @@ struct WsTextMessage_t {
     std::string content;
 };
 
+struct ScreenTouchEvent_t {
+    int x         = -1;
+    int y         = -1;
+    bool pressed  = false;
+    uint32_t tsMs = 0;
+};
+
 /**
  * @brief
  *
@@ -250,6 +257,7 @@ public:
     uitk::Signal<std::shared_ptr<LvglImage>> onWsVideoFrame;
     uitk::Signal<std::string_view> onWsDanceData;
     uitk::Signal<CommonLogLevel, std::string_view> onWsLog;
+    uitk::Signal<bool> onWsRelayLink;
 
     HomeAgentConfig_t getHomeAgentConfig();
     void setHomeAgentConfig(const HomeAgentConfig_t& config);
@@ -259,6 +267,7 @@ public:
 
     /* ----------------------------------- IMU ---------------------------------- */
     uitk::Signal<ImuMotionEvent> onImuMotionEvent;
+    uitk::Signal<const ScreenTouchEvent_t&> onScreenTouchEvent;
 
     /* ---------------------------------- Time ---------------------------------- */
     void syncRtcTimeToSystem();

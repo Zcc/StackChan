@@ -54,6 +54,13 @@ Display a short message on StackChan:
 node skills/stackchan-home-agent/bin/stackchan-home-agent.js say "Hello from the home agent" --name Codex
 ```
 
+Pass non-ASCII content (e.g. CJK) via `--content` or stdin to avoid shell argv mangling:
+
+```bash
+node skills/stackchan-home-agent/bin/stackchan-home-agent.js say --name Codex --content "你好"
+echo "你好" | node skills/stackchan-home-agent/bin/stackchan-home-agent.js say --name Codex --stdin
+```
+
 Keep messages concise. Avoid sending sensitive content to the device screen unless the user requested it.
 
 ### Look

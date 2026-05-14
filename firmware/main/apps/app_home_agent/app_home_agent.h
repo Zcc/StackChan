@@ -30,7 +30,6 @@ private:
     std::mutex _mutex;
 
     uint32_t _last_motion_cmd_tick = 0;
-    uint32_t _speech_clear_tick    = 0;
     uint32_t _last_hud_tick        = 0;
     bool _relay_online             = false;
     bool _agent_seen               = false;

@@ -44,8 +44,14 @@ async function main() {
 
 async function say(args) {
   const name = readOption(args, '--name') || 'HomeAgent';
-  const content = args.join(' ').trim();
-  if (!content) throw new Error('say requires message text');
+  let content = readOption(args, '--content');
+  if (!content && args.includes('--stdin')) {
+    args.splice(args.indexOf('--stdin'), 1);
+    content = fs.readFileSync(0, 'utf8');
+  }
+  if (!content) content = args.join(' ');
+  content = content.trim();
+  if (!content) throw new Error('say requires message text (positional, --content, or --stdin)');
   return printJSON(await requestJSON('POST', '/say', { name, content }));
 }
 

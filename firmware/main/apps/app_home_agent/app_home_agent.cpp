@@ -23,6 +23,7 @@ using namespace stackchan;
 using namespace smooth_ui_toolkit::lvgl_cpp;
 
 LV_FONT_DECLARE(font_awesome_20_4);
+LV_FONT_DECLARE(font_puhui_20_4);
 
 AppHomeAgent::AppHomeAgent()
 {
@@ -84,6 +85,10 @@ void AppHomeAgent::onOpen()
         show_boot_line("No Wi-Fi. Use phone hotspot or setup.");
     }
 
+    // Keep the BLE config server alive in HomeAgent app so that Wi-Fi / relay
+    // can be re-configured over BLE without bouncing back to the Setup app.
+    GetHAL().startAppConfigServer();
+
     view::create_home_indicator([&]() { close(); }, 0x00E5FF, 0x11183A);
     view::create_status_bar(0x00E5FF, 0x11183A);
 }
@@ -94,15 +99,7 @@ void AppHomeAgent::onRunning()
     LvglLockGuard lvgl_lock;
 
     auto& stackchan = GetStackChan();
-
-    if (_speech_clear_tick > 0 && GetHAL().millis() >= _speech_clear_tick) {
-        if (stackchan.hasAvatar()) {
-            stackchan.avatar().clearSpeech();
-        }
-        _speech_clear_tick = 0;
-    }
-
-    GetStackChan().update();
+    stackchan.update();
     if (GetHAL().millis() - _last_hud_tick > 1000) {
         _last_hud_tick = GetHAL().millis();
         update_hud();
@@ -189,18 +186,12 @@ void AppHomeAgent::bind_ws_events()
         }
     });
 
-    GetHAL().onWsLog.connect([&](CommonLogLevel level, std::string_view msg) {
-        std::string log_msg(msg);
-        if (log_msg.find("Server connected") != std::string::npos ||
-            log_msg.find("Relay connected") != std::string::npos) {
-            _relay_online = true;
-        } else if (log_msg.find("Server disconnected") != std::string::npos ||
-                   log_msg.find("Heartbeat Timeout") != std::string::npos ||
-                   log_msg.find("Connect to server Failed") != std::string::npos) {
-            _relay_online = false;
-        }
+    GetHAL().onWsRelayLink.connect([&](bool alive) {
+        _relay_online = alive;
         update_hud();
+    });
 
+    GetHAL().onWsLog.connect([&](CommonLogLevel level, std::string_view msg) {
         auto type         = static_cast<view::ToastType>(level);
         uint32_t duration = type == view::ToastType::Error ? 12000 : 1800;
         view::pop_a_toast(msg, type, duration);
@@ -209,22 +200,21 @@ void AppHomeAgent::bind_ws_events()
 
 void AppHomeAgent::show_boot_line(const std::string& line)
 {
-    set_agent_card("HomeAgent", line, true);
+    set_agent_card("", line, true);
 }
 
 void AppHomeAgent::show_agent_message(const std::string& name, const std::string& content)
 {
     auto speaker = name.empty() ? "Agent" : name;
-    auto speech = fmt::format("{}: {}", speaker, content);
-    mclog::tagInfo(getAppInfo().name, "show agent message: {}", speech);
+    mclog::tagInfo(getAppInfo().name, "show agent message: {}: {}", speaker, content);
 
-    set_agent_card(speaker, content, true);
+    // Only show the message body — the speaker tag is suppressed so user content
+    // (e.g. CLI calls that always pass a name like "Codex") doesn't get a prefix.
+    set_agent_card("", content, true);
 
     auto& stackchan = GetStackChan();
     if (stackchan.hasAvatar()) {
-        stackchan.avatar().setSpeech(speech);
         stackchan.avatar().setEmotion(avatar::Emotion::Happy);
-        _speech_clear_tick = GetHAL().millis() + 8000;
     }
     stackchan.addModifier(std::make_unique<SpeakingModifier>(2200));
 }
@@ -291,14 +281,14 @@ void AppHomeAgent::create_hud(bool configured, bool networkReady)
     _agent_card_label->align(LV_ALIGN_TOP_LEFT, 0, -2);
 
     _agent_card_text = std::make_unique<Label>(_agent_card->get());
-    _agent_card_text->setTextFont(&lv_font_montserrat_16);
+    _agent_card_text->setTextFont(&font_puhui_20_4);
     _agent_card_text->setTextColor(lv_color_hex(0xF8FAFC));
     _agent_card_text->setWidth(274);
-    _agent_card_text->align(LV_ALIGN_BOTTOM_LEFT, 0, 2);
+    _agent_card_text->align(LV_ALIGN_CENTER, 0, 0);
 
     _relay_online = configured && networkReady;
     update_hud();
-    set_agent_card("Home link", configured ? (networkReady ? "Waiting for home agent" : "No Wi-Fi. Use phone hotspot or setup.") : "Set relay in the app.");
+    set_agent_card("", configured ? (networkReady ? "Waiting for home agent" : "No Wi-Fi. Use phone hotspot or setup.") : "Set relay in the app.");
 }
 
 void AppHomeAgent::update_hud()

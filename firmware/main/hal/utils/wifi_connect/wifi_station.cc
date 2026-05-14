@@ -91,6 +91,21 @@ void StackChanWifiStation::Start()
     esp_netif_init();
     esp_event_loop_create_default();
 
+    // If Wi-Fi was already initialized by another subsystem (e.g. WifiManager
+    // started by the HomeAgent app), don't try to create a duplicate netif /
+    // re-init the driver — that asserts inside esp_netif_create_default_wifi_sta.
+    // Just hook our event handlers so AddAuth() can still be used to switch
+    // SSID over BLE.
+    wifi_mode_t existing_mode;
+    if (esp_wifi_get_mode(&existing_mode) == ESP_OK) {
+        esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                            &StackChanWifiStation::WifiEventHandler, this, &instance_any_id_);
+        esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                            &StackChanWifiStation::IpEventHandler, this, &instance_got_ip_);
+        is_started_ = true;
+        return;
+    }
+
     station_netif_ = esp_netif_create_default_wifi_sta();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
