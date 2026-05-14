@@ -57,11 +57,12 @@ const (
 	micAudio         byte = 0x39
 	screenCapture    byte = 0x3A
 	sdList           byte = 0x3B
-	sdRead           byte = 0x3C
-	sdWrite          byte = 0x3D
-	servoFeedback    byte = 0x3E
-	proximityLight   byte = 0x3F
+	micStatus        byte = 0x3C
 	getDriverHealth  byte = 0x40
+	sdRead           byte = 0x42
+	sdWrite          byte = 0x43
+	servoFeedback    byte = 0x44
+	proximityLight   byte = 0x45
 	capabilityError  byte = 0x4F
 )
 
@@ -286,6 +287,8 @@ func (b *bridge) readLoop(conn *websocket.Conn) {
 			b.publishEvent("servoFeedback", payload)
 		case proximityLight:
 			b.publishEvent("proximityLight", payload)
+		case micStatus:
+			b.dispatchMicStatus(payload)
 		case micAudio:
 			// PCM/Opus 二进制流 - 暂只通过 SSE 通知一次大小; 真正的音频上行后续走专用 endpoint
 			b.publishEvent("micAudio", []byte(fmt.Sprintf(`{"bytes":%d}`, len(payload))))

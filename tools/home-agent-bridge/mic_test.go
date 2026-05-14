@@ -125,3 +125,19 @@ func getStreamIDFromBody(s string) string {
 	_ = json.Unmarshal([]byte(s), &r)
 	return r.StreamID
 }
+
+func TestDispatchMicStatusUpdatesState(t *testing.T) {
+	b := newTestBridge()
+	_ = b.startMicForTest(t, `{}`)
+	sid := b.mic.currentStreamID()
+
+	b.dispatchMicStatus([]byte(`{"event":"started","stream_id":"` + sid + `","sample_rate":16000,"channels":1,"frame_duration_ms":60,"duration_ms":30000}`))
+	if !b.mic.snapshot().Active {
+		t.Fatalf("started event should activate mic state")
+	}
+
+	b.dispatchMicStatus([]byte(`{"event":"stopped","stream_id":"` + sid + `","reason":"user","frames":12,"bytes":3456}`))
+	if b.mic.snapshot().Active {
+		t.Fatalf("stopped event should deactivate mic state")
+	}
+}

@@ -73,6 +73,13 @@ func (s *micState) addFrame(payloadBytes int) {
 	s.mu.Unlock()
 }
 
+func (s *micState) setCounts(frames, bytes uint64) {
+	s.mu.Lock()
+	s.frames = frames
+	s.bytes = bytes
+	s.mu.Unlock()
+}
+
 func (s *micState) snapshot() micStatusSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -202,4 +209,34 @@ func (b *bridge) handleMicStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(b.mic.snapshot())
+}
+
+type micStatusEvt struct {
+	Event      string `json:"event"`
+	StreamID   string `json:"stream_id"`
+	Reason     string `json:"reason,omitempty"`
+	DurationMs int    `json:"duration_ms,omitempty"`
+	Frames     uint64 `json:"frames,omitempty"`
+	Bytes      uint64 `json:"bytes,omitempty"`
+}
+
+func (b *bridge) dispatchMicStatus(payload []byte) {
+	if b.mic == nil {
+		b.mic = newMicState()
+	}
+	var e micStatusEvt
+	if err := json.Unmarshal(payload, &e); err != nil {
+		return
+	}
+	switch e.Event {
+	case "started":
+		b.mic.markStarted(e.StreamID, time.Now())
+	case "stopped":
+		b.mic.markStopped(e.StreamID, e.Reason, e.Frames, e.Bytes)
+	case "stats":
+		b.mic.setCounts(e.Frames, e.Bytes)
+	default:
+		return
+	}
+	b.publishEvent("mic."+e.Event, payload)
 }
