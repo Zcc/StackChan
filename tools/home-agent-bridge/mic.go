@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 type micStatusSnapshot struct {
@@ -239,4 +241,104 @@ func (b *bridge) dispatchMicStatus(payload []byte) {
 		return
 	}
 	b.publishEvent("mic."+e.Event, payload)
+}
+
+type micSub struct {
+	conn      *websocket.Conn
+	send      chan []byte
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+var micUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+func (b *bridge) handleMicWS(w http.ResponseWriter, r *http.Request) {
+	b.micSubMu.Lock()
+	if b.micSub != nil {
+		b.micSubMu.Unlock()
+		http.Error(w, `{"code":"mic.subscriber.exists"}`, http.StatusConflict)
+		return
+	}
+	conn, err := micUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		b.micSubMu.Unlock()
+		return
+	}
+	sub := &micSub{conn: conn, send: make(chan []byte, 64), done: make(chan struct{})}
+	b.micSub = sub
+	b.micSubMu.Unlock()
+
+	defer b.closeMicSub(sub)
+	go func() {
+		for {
+			if _, _, err := conn.NextReader(); err != nil {
+				b.closeMicSub(sub)
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case msg := <-sub.send:
+			_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+			if err := conn.WriteMessage(websocket.BinaryMessage, msg); err != nil {
+				return
+			}
+		case <-sub.done:
+			return
+		}
+	}
+}
+
+func (b *bridge) dispatchMicAudio(payload []byte) {
+	if b.mic == nil {
+		b.mic = newMicState()
+	}
+	b.mic.addFrame(len(payload))
+
+	b.micSubMu.Lock()
+	defer b.micSubMu.Unlock()
+	sub := b.micSub
+	if sub == nil {
+		return
+	}
+	select {
+	case sub.send <- append([]byte(nil), payload...):
+	default:
+		if b.micSub == sub {
+			b.micSub = nil
+		}
+		sub.closeOnce.Do(func() {
+			close(sub.done)
+			if sub.conn != nil {
+				_ = sub.conn.Close()
+			}
+		})
+	}
+}
+
+func (b *bridge) micSubscriberCount() int {
+	b.micSubMu.Lock()
+	defer b.micSubMu.Unlock()
+	if b.micSub == nil {
+		return 0
+	}
+	return 1
+}
+
+func (b *bridge) closeMicSub(sub *micSub) {
+	b.micSubMu.Lock()
+	if b.micSub == sub {
+		b.micSub = nil
+	}
+	b.micSubMu.Unlock()
+	sub.closeOnce.Do(func() {
+		close(sub.done)
+		if sub.conn != nil {
+			_ = sub.conn.Close()
+		}
+	})
 }

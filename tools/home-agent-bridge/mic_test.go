@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestMicStateLifecycle(t *testing.T) {
@@ -139,5 +142,71 @@ func TestDispatchMicStatusUpdatesState(t *testing.T) {
 	b.dispatchMicStatus([]byte(`{"event":"stopped","stream_id":"` + sid + `","reason":"user","frames":12,"bytes":3456}`))
 	if b.mic.snapshot().Active {
 		t.Fatalf("stopped event should deactivate mic state")
+	}
+}
+
+func TestMicWSSingleSubscriber(t *testing.T) {
+	b := newTestBridge()
+	srv := httptest.NewServer(http.HandlerFunc(b.handleMicWS))
+	defer srv.Close()
+
+	c1, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("first dial: %v", err)
+	}
+	defer c1.Close()
+
+	_, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err == nil {
+		t.Fatalf("second dial should fail")
+	}
+	if resp == nil || resp.StatusCode != http.StatusConflict {
+		t.Fatalf("want 409, got %#v", resp)
+	}
+}
+
+func TestMicAudioFanout(t *testing.T) {
+	b := newTestBridge()
+	srv := httptest.NewServer(http.HandlerFunc(b.handleMicWS))
+	defer srv.Close()
+
+	c, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	frame := make([]byte, 16+8)
+	for i := range frame {
+		frame[i] = byte(i)
+	}
+	b.dispatchMicAudio(frame)
+
+	_ = c.SetReadDeadline(time.Now().Add(time.Second))
+	mt, data, err := c.ReadMessage()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if mt != websocket.BinaryMessage {
+		t.Fatalf("expect binary, got %d", mt)
+	}
+	if !bytes.Equal(data, frame) {
+		t.Fatalf("payload mismatch: got %x want %x", data, frame)
+	}
+}
+
+func TestMicAudioBackpressureDropsSubscriber(t *testing.T) {
+	b := newTestBridge()
+	sub := &micSub{send: make(chan []byte, 1), done: make(chan struct{})}
+	sub.send <- []byte("queued")
+	b.micSub = sub
+
+	b.dispatchMicAudio(make([]byte, 64))
+
+	if b.micSubscriberCount() != 0 {
+		t.Fatalf("backpressured subscriber should have been dropped")
+	}
+	if got := b.mic.snapshot().Frames; got != 1 {
+		t.Fatalf("device frame should still be counted, got %d", got)
 	}
 }

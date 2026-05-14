@@ -80,6 +80,8 @@ type bridge struct {
 	snapshotWait   chan []byte
 	writeMu        sync.Mutex
 	mic            *micState
+	micSubMu       sync.Mutex
+	micSub         *micSub
 	sendPacketHook func(byte, []byte) error
 
 	// 等待固件回包的 channel：key = 二进制 type id
@@ -157,6 +159,7 @@ func main() {
 	http.HandleFunc("/mic/start", b.withAuth(b.handleMicStart))
 	http.HandleFunc("/mic/stop", b.withAuth(b.handleMicStop))
 	http.HandleFunc("/mic/status", b.withAuth(b.handleMicStatus))
+	http.HandleFunc("/mic/ws", b.withAuth(b.handleMicWS))
 	http.HandleFunc("/screen/snapshot", b.withAuth(b.stubHandler(screenCapture, "screen.capture")))
 	http.HandleFunc("/sd/list", b.withAuth(b.stubHandler(sdList, "sd.list")))
 	http.HandleFunc("/sd/read", b.withAuth(b.stubHandler(sdRead, "sd.read")))
@@ -290,8 +293,7 @@ func (b *bridge) readLoop(conn *websocket.Conn) {
 		case micStatus:
 			b.dispatchMicStatus(payload)
 		case micAudio:
-			// PCM/Opus 二进制流 - 暂只通过 SSE 通知一次大小; 真正的音频上行后续走专用 endpoint
-			b.publishEvent("micAudio", []byte(fmt.Sprintf(`{"bytes":%d}`, len(payload))))
+			b.dispatchMicAudio(payload)
 		}
 	}
 }
