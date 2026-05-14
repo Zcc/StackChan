@@ -1,9 +1,13 @@
 #!/usr/bin/env swift
 // BLE tool to configure HomeAgent relay on StackChan
-// Usage: swift ble_config_homeagent.swift [get|set|reset]
-//   get   - read current HomeAgent config
-//   set   - write relay config (uses env vars or defaults below)
-//   reset - clear HomeAgent config
+// Usage: swift ble_config_homeagent.swift [get|set|reset|wifi-list|wifi-remove <index>|wifi-default <index>|wifi-clear]
+//   get          - read current HomeAgent config
+//   set          - write relay config (uses env vars or defaults below)
+//   reset        - clear HomeAgent config
+//   wifi-list    - list saved Wi-Fi profiles
+//   wifi-remove  - remove a saved Wi-Fi profile by index
+//   wifi-default - move a Wi-Fi profile to the front of the priority list
+//   wifi-clear   - clear all saved Wi-Fi profiles
 
 import Foundation
 import CoreBluetooth
@@ -104,6 +108,28 @@ class BLEConfigurator: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
             {"cmd":"resetHomeAgent"}
             """
             print("Resetting HomeAgent config...")
+        case "wifi-list":
+            json = """
+            {"cmd":"getWifiProfiles"}
+            """
+            print("Getting Wi-Fi profiles...")
+        case "wifi-remove":
+            let index = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "-1"
+            json = """
+            {"cmd":"removeWifiProfile","data":{"index":\(index)}}
+            """
+            print("Removing Wi-Fi profile index \(index)...")
+        case "wifi-default":
+            let index = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "-1"
+            json = """
+            {"cmd":"setDefaultWifiProfile","data":{"index":\(index)}}
+            """
+            print("Setting default Wi-Fi profile index \(index)...")
+        case "wifi-clear":
+            json = """
+            {"cmd":"clearWifiProfiles"}
+            """
+            print("Clearing Wi-Fi profiles...")
         default:
             json = """
             {"cmd":"getHomeAgent"}
@@ -143,8 +169,9 @@ class BLEConfigurator: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
 
 // Parse action
 let action = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "get"
-guard ["get", "set", "reset"].contains(action) else {
-    print("Usage: swift ble_config_homeagent.swift [get|set|reset]")
+let validActions = ["get", "set", "reset", "wifi-list", "wifi-remove", "wifi-default", "wifi-clear"]
+guard validActions.contains(action) else {
+    print("Usage: swift ble_config_homeagent.swift [get|set|reset|wifi-list|wifi-remove <index>|wifi-default <index>|wifi-clear]")
     exit(1)
 }
 

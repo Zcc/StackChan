@@ -8,6 +8,8 @@
 #include <mooncake.h>
 #include <mooncake_log.h>
 #include <wifi_manager.h>
+#include <ssid_manager.h>
+#include <settings.h>
 #include <board.h>
 #include <mutex>
 #include <queue>
@@ -19,6 +21,8 @@
 
 static std::string _tag           = "Network";
 static bool _is_network_connected = false;
+static const std::string _wifi_profile_setting_ns = "home_agent_wifi";
+static const std::string _last_success_ssid_key = "last_success_ssid";
 
 static void time_sync_notification_cb(struct timeval* tv)
 {
@@ -77,6 +81,10 @@ bool Hal::startNetwork(std::function<void(std::string_view)> onLog, uint32_t tim
             }
             case NetworkEvent::Connected: {
                 network_connected = true;
+                if (!data.empty()) {
+                    Settings settings(_wifi_profile_setting_ns, true);
+                    settings.SetString(_last_success_ssid_key, data);
+                }
                 break;
             }
             case NetworkEvent::Disconnected:
@@ -147,4 +155,69 @@ WifiStatus Hal::getWifiStatus()
         return WifiStatus::Medium;
     }
     return WifiStatus::Low;
+}
+
+std::vector<WifiProfile_t> Hal::getWifiProfiles()
+{
+    auto last_success = getLastSuccessfulWifiSsid();
+    std::vector<WifiProfile_t> profiles;
+    for (const auto& item : SsidManager::GetInstance().GetSsidList()) {
+        profiles.push_back({item.ssid, !last_success.empty() && item.ssid == last_success});
+    }
+    return profiles;
+}
+
+void Hal::removeWifiProfile(int index)
+{
+    auto profiles = getWifiProfiles();
+    if (index >= 0 && index < static_cast<int>(profiles.size()) && profiles[index].lastSuccessful) {
+        Settings settings(_wifi_profile_setting_ns, true);
+        settings.SetString(_last_success_ssid_key, "");
+    }
+    SsidManager::GetInstance().RemoveSsid(index);
+}
+
+void Hal::setDefaultWifiProfile(int index)
+{
+    SsidManager::GetInstance().SetDefaultSsid(index);
+}
+
+void Hal::clearWifiProfiles()
+{
+    SsidManager::GetInstance().Clear();
+    Settings settings(_wifi_profile_setting_ns, true);
+    settings.SetString(_last_success_ssid_key, "");
+}
+
+std::string Hal::getLastSuccessfulWifiSsid()
+{
+    Settings settings(_wifi_profile_setting_ns, false);
+    return settings.GetString(_last_success_ssid_key, "");
+}
+
+std::string Hal::getCurrentWifiSsid()
+{
+    return WifiManager::GetInstance().GetSsid();
+}
+
+std::string Hal::getWifiIpAddress()
+{
+    return WifiManager::GetInstance().GetIpAddress();
+}
+
+bool Hal::isWifiConfigMode()
+{
+    return WifiManager::GetInstance().IsConfigMode();
+}
+
+void Hal::enterWifiConfigMode()
+{
+    auto& wifi = WifiManager::GetInstance();
+    if (!wifi.IsInitialized()) {
+        WifiManagerConfig config;
+        config.ssid_prefix = "StackChan";
+        config.language = "zh-CN";
+        wifi.Initialize(config);
+    }
+    wifi.StartConfigAp();
 }

@@ -81,7 +81,8 @@ void AppHomeAgent::onOpen()
     if (!is_configured) {
         show_boot_line("Set relay in the app.");
     } else if (!network_ready) {
-        show_boot_line("Wi-Fi unavailable");
+        GetHAL().enterWifiConfigMode();
+        show_boot_line("No Wi-Fi. Use phone hotspot or config app.");
     }
 
     view::create_home_indicator([&]() { close(); }, 0x00E5FF, 0x11183A);
@@ -322,7 +323,7 @@ void AppHomeAgent::create_hud(bool configured, bool networkReady)
 
     _relay_online = configured && networkReady;
     update_hud();
-    set_agent_card("Home link", configured ? (networkReady ? "Waiting for home agent" : "Wi-Fi unavailable") : "Set relay in the app.");
+    set_agent_card("Home link", configured ? (networkReady ? "Waiting for home agent" : "No Wi-Fi. Use phone hotspot or config app.") : "Set relay in the app.");
 }
 
 void AppHomeAgent::update_hud()
@@ -365,6 +366,9 @@ void AppHomeAgent::set_agent_card(const std::string& label, const std::string& t
 
 std::string AppHomeAgent::wifi_status_text() const
 {
+    if (GetHAL().isWifiConfigMode()) {
+        return "Config";
+    }
     switch (GetHAL().getWifiStatus()) {
         case WifiStatus::High:
             return "Wi-Fi";

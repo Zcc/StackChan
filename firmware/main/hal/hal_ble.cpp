@@ -180,6 +180,14 @@ private:
             handle_set_wifi(doc["data"]);
         } else if (doc["cmd"] == "getWifiStatus") {
             handle_get_wifi_status();
+        } else if (doc["cmd"] == "getWifiProfiles") {
+            handle_get_wifi_profiles();
+        } else if (doc["cmd"] == "removeWifiProfile") {
+            handle_remove_wifi_profile(doc["data"]);
+        } else if (doc["cmd"] == "setDefaultWifiProfile") {
+            handle_set_default_wifi_profile(doc["data"]);
+        } else if (doc["cmd"] == "clearWifiProfiles") {
+            handle_clear_wifi_profiles();
         } else if (doc["cmd"] == "setHomeAgent") {
             handle_set_home_agent(doc["data"]);
         } else if (doc["cmd"] == "getHomeAgent") {
@@ -221,6 +229,31 @@ private:
         GetHAL().onAppConfigEvent.emit(AppConfigEvent::TryWifiConnect);
 
         connect_wifi(ssid, password);
+    }
+
+    void handle_get_wifi_profiles()
+    {
+        notify_wifi_profiles("wifiProfiles", GetHAL().getWifiProfiles());
+    }
+
+    void handle_remove_wifi_profile(ArduinoJson::JsonObject data)
+    {
+        int index = data["index"] | -1;
+        GetHAL().removeWifiProfile(index);
+        notify_wifi_profiles("wifiProfileRemoved", GetHAL().getWifiProfiles());
+    }
+
+    void handle_set_default_wifi_profile(ArduinoJson::JsonObject data)
+    {
+        int index = data["index"] | -1;
+        GetHAL().setDefaultWifiProfile(index);
+        notify_wifi_profiles("wifiProfileDefault", GetHAL().getWifiProfiles());
+    }
+
+    void handle_clear_wifi_profiles()
+    {
+        GetHAL().clearWifiProfiles();
+        notify_wifi_profiles("wifiProfilesCleared", GetHAL().getWifiProfiles());
     }
 
     void handle_set_home_agent(ArduinoJson::JsonObject data)
@@ -280,6 +313,25 @@ private:
         doc["data"]["deviceId"] = config.deviceId;
         doc["data"]["hasToken"] = !config.token.empty();
 
+        notify_json(doc);
+    }
+
+    void notify_wifi_profiles(const char* state, const std::vector<WifiProfile_t>& profiles)
+    {
+        ArduinoJson::JsonDocument doc;
+        doc["cmd"] = "notifyWifiProfiles";
+        doc["data"]["state"] = state;
+        doc["data"]["currentSsid"] = GetHAL().getCurrentWifiSsid();
+        doc["data"]["lastSuccessfulSsid"] = GetHAL().getLastSuccessfulWifiSsid();
+        doc["data"]["ip"] = GetHAL().getWifiIpAddress();
+        doc["data"]["configMode"] = GetHAL().isWifiConfigMode();
+        auto items = doc["data"]["profiles"].to<ArduinoJson::JsonArray>();
+        for (size_t i = 0; i < profiles.size(); ++i) {
+            auto item = items.add<ArduinoJson::JsonObject>();
+            item["index"] = i;
+            item["ssid"] = profiles[i].ssid;
+            item["lastSuccessful"] = profiles[i].lastSuccessful;
+        }
         notify_json(doc);
     }
 

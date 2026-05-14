@@ -7,9 +7,9 @@ ACTION="${1:-get}"
 
 usage() {
   cat <<USAGE
-Usage: tools/config_homeagent.sh [get|set|reset]
+Usage: tools/config_homeagent.sh [get|set|reset|wifi-list|wifi-remove <index>|wifi-default <index>|wifi-clear]
 
-Configure StackChan HomeAgent over BLE.
+Configure StackChan HomeAgent and Wi-Fi profiles over BLE.
 
 Before running 'set':
   cp tools/.env.example tools/.env.local
@@ -21,7 +21,7 @@ USAGE
 }
 
 case "$ACTION" in
-  get|set|reset) ;;
+  get|set|reset|wifi-list|wifi-remove|wifi-default|wifi-clear) ;;
   -h|--help|help) usage; exit 0 ;;
   *) usage; exit 1 ;;
 esac
@@ -43,4 +43,4 @@ if [[ "$ACTION" == "set" ]]; then
   : "${DEVICE_ID:?DEVICE_ID is required in $ENV_FILE}"
 fi
 
-exec swift "$ROOT_DIR/tools/ble_config_homeagent.swift" "$ACTION"
+exec swift "$ROOT_DIR/tools/ble_config_homeagent.swift" "$ACTION" "${2:-}"

@@ -7,6 +7,7 @@
 #include <memory>
 #include <cstdint>
 #include <string>
+#include <vector>
 #include <lvgl.h>
 #include <functional>
 #include <smooth_ui_toolkit.hpp>
@@ -99,6 +100,11 @@ enum class WifiStatus {
     Low,
     Medium,
     High,
+};
+
+struct WifiProfile_t {
+    std::string ssid;
+    bool lastSuccessful = false;
 };
 
 /**
@@ -274,6 +280,15 @@ public:
     /* --------------------------------- Network -------------------------------- */
     bool startNetwork(std::function<void(std::string_view)> onLog, uint32_t timeoutMs = 0);
     WifiStatus getWifiStatus();
+    std::vector<WifiProfile_t> getWifiProfiles();
+    void removeWifiProfile(int index);
+    void setDefaultWifiProfile(int index);
+    void clearWifiProfiles();
+    std::string getLastSuccessfulWifiSsid();
+    std::string getCurrentWifiSsid();
+    std::string getWifiIpAddress();
+    bool isWifiConfigMode();
+    void enterWifiConfigMode();
     void startSntp();
 
     /* -------------------------------- App center ------------------------------- */
