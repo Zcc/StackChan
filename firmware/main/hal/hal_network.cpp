@@ -22,7 +22,7 @@
 static std::string _tag           = "Network";
 static bool _is_network_connected = false;
 static const std::string _wifi_profile_setting_ns = "home_agent_wifi";
-static const std::string _last_success_ssid_key = "last_success_ssid";
+static const std::string _last_success_ssid_key = "last_ssid";
 
 static void time_sync_notification_cb(struct timeval* tv)
 {
