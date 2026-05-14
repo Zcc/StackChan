@@ -1,0 +1,17 @@
+[Unit]
+Description=StackChan HomeAgent Relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/StackChan/tools/home-agent-relay
+EnvironmentFile=/etc/stackchan-relay.env
+ExecStart=/usr/local/bin/stackchan-home-agent-relay -addr :8787
+Restart=always
+RestartSec=3
+User=stackchan
+Group=stackchan
+
+[Install]
+WantedBy=multi-user.target

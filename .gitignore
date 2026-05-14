@@ -2,3 +2,8 @@
 .idea/
 # Compiled BLE config tool
 tools/ble_config_homeagent
+
+# Local HomeAgent secrets
+tools/.env.local
+tools/home-agent-relay/.env.local
+tools/home-agent-bridge/.env.local

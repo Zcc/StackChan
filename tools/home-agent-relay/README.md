@@ -1,5 +1,8 @@
 # StackChan HomeAgent Relay
 
+For the repeatable no-secrets-in-Git setup flow, see `../../docs/home_agent_setup.md`.
+
+
 A minimal WSS-friendly relay for the HomeAgent route:
 
 ```text

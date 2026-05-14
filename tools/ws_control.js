@@ -11,6 +11,26 @@
 //   interactive          - enter interactive mode
 
 const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
+
+function loadLocalEnv() {
+    const envPath = process.env.HOMEAGENT_ENV_FILE || path.join(__dirname, '.env.local');
+    if (!fs.existsSync(envPath)) return;
+
+    const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eq = trimmed.indexOf('=');
+        if (eq <= 0) continue;
+        const key = trimmed.slice(0, eq).trim();
+        const value = trimmed.slice(eq + 1).trim().replace(/^(["'])(.*)\1$/, '$2');
+        if (!process.env[key]) process.env[key] = value;
+    }
+}
+
+loadLocalEnv();
 
 const RELAY_URL = process.env.RELAY_URL || '';
 const DEVICE_ID = process.env.DEVICE_ID || '';

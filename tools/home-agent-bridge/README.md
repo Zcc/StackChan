@@ -1,5 +1,8 @@
 # StackChan HomeAgent Bridge
 
+For the repeatable no-secrets-in-Git setup flow, see `../../docs/home_agent_setup.md`.
+
+
 Runs on the home computer and exposes a local HTTP API for Codex, OpenClaw, Hermes, or any other local agent.
 
 ```bash

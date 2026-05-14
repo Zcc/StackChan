@@ -1,0 +1,17 @@
+[Unit]
+Description=StackChan HomeAgent Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/StackChan/tools/home-agent-bridge
+EnvironmentFile=/etc/stackchan-bridge.env
+ExecStart=/usr/local/bin/stackchan-home-agent-bridge -addr 127.0.0.1:8790
+Restart=always
+RestartSec=3
+User=stackchan
+Group=stackchan
+
+[Install]
+WantedBy=default.target
