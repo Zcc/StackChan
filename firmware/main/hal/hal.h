@@ -248,7 +248,7 @@ public:
     HomeAgentConfig_t getHomeAgentConfig();
     void setHomeAgentConfig(const HomeAgentConfig_t& config);
     void resetHomeAgentConfig();
-    void startWebSocketAvatarService(std::function<void(std::string_view)> onStartLog);
+    bool startWebSocketAvatarService(std::function<void(std::string_view)> onStartLog, uint32_t networkTimeoutMs = 0);
     void stopWebSocketAvatarService();
 
     /* ----------------------------------- IMU ---------------------------------- */
@@ -272,7 +272,7 @@ public:
     void clearWarmRebootRequest();
 
     /* --------------------------------- Network -------------------------------- */
-    void startNetwork(std::function<void(std::string_view)> onLog);
+    bool startNetwork(std::function<void(std::string_view)> onLog, uint32_t timeoutMs = 0);
     WifiStatus getWifiStatus();
     void startSntp();
 

@@ -44,11 +44,11 @@ void Hal::startSntp()
     }
 }
 
-void Hal::startNetwork(std::function<void(std::string_view)> onLog)
+bool Hal::startNetwork(std::function<void(std::string_view)> onLog, uint32_t timeoutMs)
 {
     if (_is_network_connected) {
         mclog::tagInfo(_tag, "network already connected");
-        return;
+        return true;
     }
 
     std::atomic<bool> network_connected = false;
@@ -108,7 +108,16 @@ void Hal::startNetwork(std::function<void(std::string_view)> onLog)
     });
     board.StartNetwork();
 
+    auto start_tick = GetHAL().millis();
     while (!network_connected) {
+        if (timeoutMs > 0 && GetHAL().millis() - start_tick >= timeoutMs) {
+            mclog::tagWarn(_tag, "network start timeout after {} ms", timeoutMs);
+            if (onLog) {
+                onLog("WiFi unavailable. Swipe up to exit.");
+            }
+            board.SetNetworkEventCallback(nullptr);
+            return false;
+        }
         GetHAL().delay(500);
     }
     mclog::tagInfo(_tag, "network connected");
@@ -117,6 +126,7 @@ void Hal::startNetwork(std::function<void(std::string_view)> onLog)
     startSntp();
 
     _is_network_connected = true;
+    return true;
 }
 
 WifiStatus Hal::getWifiStatus()

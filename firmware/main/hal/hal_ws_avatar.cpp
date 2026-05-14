@@ -569,11 +569,13 @@ private:
 
 static WebsocketAvatarWorker* _ws_avatar_worker = nullptr;
 
-void Hal::startWebSocketAvatarService(std::function<void(std::string_view)> onStartLog)
+bool Hal::startWebSocketAvatarService(std::function<void(std::string_view)> onStartLog, uint32_t networkTimeoutMs)
 {
     mclog::tagInfo(_tag, "start websocket avatar service");
 
-    startNetwork(onStartLog);
+    if (!startNetwork(onStartLog, networkTimeoutMs)) {
+        return false;
+    }
 
     onStartLog("Connecting to\nserver...");
 
@@ -585,6 +587,7 @@ void Hal::startWebSocketAvatarService(std::function<void(std::string_view)> onSt
     auto worker = std::make_unique<WebsocketAvatarWorker>();
     _ws_avatar_worker = worker.get();
     mooncake::GetMooncake().extensionManager()->createAbility(std::move(worker));
+    return true;
 }
 
 void Hal::stopWebSocketAvatarService()

@@ -21,6 +21,8 @@ type peer struct {
 	lastSeen  time.Time
 }
 
+const heartbeatPing byte = 0x10
+
 type outbound struct {
 	messageType int
 	data        []byte
@@ -207,8 +209,10 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeLoop(p *peer) {
-	ticker := time.NewTicker(25 * time.Second)
-	defer ticker.Stop()
+	wsTicker := time.NewTicker(25 * time.Second)
+	protocolTicker := time.NewTicker(5 * time.Second)
+	defer wsTicker.Stop()
+	defer protocolTicker.Stop()
 
 	for {
 		select {
@@ -220,11 +224,20 @@ func writeLoop(p *peer) {
 			if err := p.conn.WriteMessage(msg.messageType, msg.data); err != nil {
 				return
 			}
-		case <-ticker.C:
+		case <-protocolTicker.C:
+			_ = p.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := p.conn.WriteMessage(websocket.BinaryMessage, heartbeatPacket()); err != nil {
+				return
+			}
+		case <-wsTicker.C:
 			_ = p.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := p.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		}
 	}
+}
+
+func heartbeatPacket() []byte {
+	return []byte{heartbeatPing, 0, 0, 0, 0}
 }

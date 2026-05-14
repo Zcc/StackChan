@@ -51,10 +51,13 @@ void AppHomeAgent::onOpen()
         GetHAL().delay(1400);
     }
 
-    GetHAL().startWebSocketAvatarService([&](std::string_view msg) {
-        LvglLockGuard lock;
-        loading_page->setMessage(msg);
-    });
+    constexpr uint32_t network_timeout_ms = 20000;
+    bool network_ready = GetHAL().startWebSocketAvatarService(
+        [&](std::string_view msg) {
+            LvglLockGuard lock;
+            loading_page->setMessage(msg);
+        },
+        network_timeout_ms);
 
     LvglLockGuard lock;
     loading_page.reset();
@@ -63,7 +66,11 @@ void AppHomeAgent::onOpen()
     bind_ws_events();
     _video_window = std::make_unique<view::VideoWindow>(lv_screen_active());
 
-    show_boot_line(config.enabled ? "Relay link armed." : "Set relay in the app.");
+    if (!network_ready) {
+        show_boot_line("WiFi unavailable. Swipe up to exit.");
+    } else {
+        show_boot_line(config.enabled ? "Relay link armed." : "Set relay in the app.");
+    }
 
     view::create_home_indicator([&]() { close(); }, 0x00E5FF, 0x11183A);
     view::create_status_bar(0x00E5FF, 0x11183A);
