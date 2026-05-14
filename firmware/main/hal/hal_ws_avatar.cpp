@@ -86,10 +86,11 @@ public:
         MicAudio          = 0x39,  // 出站 stub (PCM/Opus)
         ScreenCapture     = 0x3A,  // 入站/响应 stub
         SdList            = 0x3B,  // 入站 stub
-        SdRead            = 0x3C,  // 入站 stub
-        SdWrite           = 0x3D,  // 入站 stub
-        ServoFeedback     = 0x3E,  // 出站 stub
-        ProximityLight    = 0x3F,  // 出站 stub
+        MicStatus         = 0x3C,  // 出站: JSON {event:"started|stopped|stats", stream_id, ...}
+        SdRead            = 0x42,  // 入站 stub
+        SdWrite           = 0x43,  // 入站 stub
+        ServoFeedback     = 0x44,  // 出站 stub
+        ProximityLight    = 0x45,  // 出站 stub
         GetDriverHealth   = 0x40,  // 双向: 请求/响应 JSON {drivers:[...]}
 
         // 通用错误响应 - 桥可识别此 type 来知道某能力未实现
