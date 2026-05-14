@@ -123,6 +123,9 @@ func (b *bridge) agentRelayURL() (string, error) {
 	q := u.Query()
 	q.Set("role", "agent")
 	q.Set("deviceId", b.deviceID)
+	if q.Get("clientId") == "" {
+		q.Set("clientId", "home-agent-bridge")
+	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }

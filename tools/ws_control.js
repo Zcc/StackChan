@@ -128,7 +128,9 @@ function parsePacket(data) {
 const typeName = (t) => Object.keys(TYPE).find(k => TYPE[k] === t) || `0x${t.toString(16)}`;
 
 function connect(onOpen) {
-    const url = `${RELAY_URL}?role=agent&deviceId=${DEVICE_ID}`;
+    const joiner = RELAY_URL.includes('?') ? '&' : '?';
+    const clientId = encodeURIComponent(process.env.HOMEAGENT_CLIENT_ID || 'ws-control');
+    const url = `${RELAY_URL}${joiner}role=agent&deviceId=${DEVICE_ID}&clientId=${clientId}`;
     const ws = new WebSocket(url, { headers: { Authorization: TOKEN } });
 
     ws.on('open', () => {

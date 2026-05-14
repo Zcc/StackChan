@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -13,10 +14,13 @@ import (
 )
 
 type peer struct {
+	id        string
 	conn      *websocket.Conn
 	send      chan outbound
 	role      string
 	deviceID  string
+	remote    string
+	userAgent string
 	connected time.Time
 	lastSeen  time.Time
 }
@@ -30,7 +34,16 @@ type outbound struct {
 
 type room struct {
 	device *peer
-	agent  *peer
+	agents map[string]*peer
+}
+
+type peerState struct {
+	Connected bool   `json:"connected"`
+	ID        string `json:"id,omitempty"`
+	Since     string `json:"since,omitempty"`
+	LastSeen  string `json:"lastSeen,omitempty"`
+	Remote    string `json:"remote,omitempty"`
+	UserAgent string `json:"userAgent,omitempty"`
 }
 
 var (
@@ -74,18 +87,28 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p := &peer{
+		id:        peerID(role, r),
 		conn:      conn,
 		send:      make(chan outbound, 64),
 		role:      role,
 		deviceID:  deviceID,
+		remote:    r.RemoteAddr,
+		userAgent: r.UserAgent(),
 		connected: time.Now(),
 		lastSeen:  time.Now(),
 	}
 	register(deviceID, role, p)
-	log.Printf("%s connected: %s", role, deviceID)
+	log.Printf("%s connected: device=%s peer=%s remote=%s", role, deviceID, p.id, p.remote)
 
 	go writeLoop(p)
 	readLoop(deviceID, role, p)
+}
+
+func peerID(role string, r *http.Request) string {
+	if id := r.URL.Query().Get("clientId"); id != "" {
+		return id
+	}
+	return fmt.Sprintf("%s-%d", role, time.Now().UnixNano())
 }
 
 func register(deviceID, role string, p *peer) {
@@ -94,18 +117,28 @@ func register(deviceID, role string, p *peer) {
 
 	r := rooms[deviceID]
 	if r == nil {
-		r = &room{}
+		r = &room{agents: map[string]*peer{}}
 		rooms[deviceID] = r
 	}
-	var old *peer
-	if role == "device" {
-		old, r.device = r.device, p
-	} else {
-		old, r.agent = r.agent, p
+	if r.agents == nil {
+		r.agents = map[string]*peer{}
 	}
-	if old != nil {
+
+	if role == "device" {
+		old := r.device
+		r.device = p
+		if old != nil {
+			log.Printf("replace device: device=%s oldPeer=%s newPeer=%s", deviceID, old.id, p.id)
+			_ = old.conn.Close()
+		}
+		return
+	}
+
+	if old := r.agents[p.id]; old != nil {
+		log.Printf("replace agent: device=%s peer=%s", deviceID, p.id)
 		_ = old.conn.Close()
 	}
+	r.agents[p.id] = p
 }
 
 func unregister(deviceID, role string, p *peer) {
@@ -119,15 +152,15 @@ func unregister(deviceID, role string, p *peer) {
 	if role == "device" && r.device == p {
 		r.device = nil
 	}
-	if role == "agent" && r.agent == p {
-		r.agent = nil
+	if role == "agent" && r.agents[p.id] == p {
+		delete(r.agents, p.id)
 	}
-	if r.device == nil && r.agent == nil {
+	if r.device == nil && len(r.agents) == 0 {
 		delete(rooms, deviceID)
 	}
 }
 
-func targetPeer(deviceID, role string) *peer {
+func targetPeers(deviceID, role string) []*peer {
 	roomsMu.Lock()
 	defer roomsMu.Unlock()
 
@@ -135,17 +168,25 @@ func targetPeer(deviceID, role string) *peer {
 	if r == nil {
 		return nil
 	}
-	if role == "device" {
-		return r.agent
+	if role == "agent" {
+		if r.device == nil {
+			return nil
+		}
+		return []*peer{r.device}
 	}
-	return r.device
+
+	peers := make([]*peer, 0, len(r.agents))
+	for _, agent := range r.agents {
+		peers = append(peers, agent)
+	}
+	return peers
 }
 
 func readLoop(deviceID, role string, p *peer) {
 	defer func() {
 		unregister(deviceID, role, p)
 		_ = p.conn.Close()
-		log.Printf("%s disconnected: %s", role, deviceID)
+		log.Printf("%s disconnected: device=%s peer=%s", role, deviceID, p.id)
 	}()
 
 	p.conn.SetReadLimit(8 << 20)
@@ -158,14 +199,15 @@ func readLoop(deviceID, role string, p *peer) {
 	for {
 		messageType, data, err := p.conn.ReadMessage()
 		if err != nil {
+			log.Printf("read ended: device=%s peer=%s role=%s err=%v", deviceID, p.id, role, err)
 			return
 		}
 		p.lastSeen = time.Now()
-		if dst := targetPeer(deviceID, role); dst != nil {
+		for _, dst := range targetPeers(deviceID, role) {
 			select {
 			case dst.send <- outbound{messageType: messageType, data: append([]byte(nil), data...)}:
 			default:
-				log.Printf("drop message for slow peer: %s", deviceID)
+				log.Printf("drop message for slow peer: device=%s peer=%s", deviceID, dst.id)
 			}
 		}
 	}
@@ -177,14 +219,10 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type peerState struct {
-		Connected bool   `json:"connected"`
-		Since     string `json:"since,omitempty"`
-		LastSeen  string `json:"lastSeen,omitempty"`
-	}
 	type roomState struct {
-		Device peerState `json:"device"`
-		Agent  peerState `json:"agent"`
+		Device peerState   `json:"device"`
+		Agent  peerState   `json:"agent"`
+		Agents []peerState `json:"agents,omitempty"`
 	}
 
 	roomsMu.Lock()
@@ -192,10 +230,14 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	for deviceID, room := range rooms {
 		state := roomState{}
 		if room.device != nil {
-			state.Device = peerState{Connected: true, Since: room.device.connected.Format(time.RFC3339), LastSeen: room.device.lastSeen.Format(time.RFC3339)}
+			state.Device = stateForPeer(room.device)
 		}
-		if room.agent != nil {
-			state.Agent = peerState{Connected: true, Since: room.agent.connected.Format(time.RFC3339), LastSeen: room.agent.lastSeen.Format(time.RFC3339)}
+		for _, agent := range room.agents {
+			agentState := stateForPeer(agent)
+			state.Agents = append(state.Agents, agentState)
+			if !state.Agent.Connected {
+				state.Agent = agentState
+			}
 		}
 		out[deviceID] = state
 	}
@@ -206,6 +248,17 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		"rooms": out,
 		"count": len(out),
 	})
+}
+
+func stateForPeer(p *peer) peerState {
+	return peerState{
+		Connected: true,
+		ID:        p.id,
+		Since:     p.connected.Format(time.RFC3339),
+		LastSeen:  p.lastSeen.Format(time.RFC3339),
+		Remote:    p.remote,
+		UserAgent: p.userAgent,
+	}
 }
 
 func writeLoop(p *peer) {
@@ -222,16 +275,19 @@ func writeLoop(p *peer) {
 			}
 			_ = p.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := p.conn.WriteMessage(msg.messageType, msg.data); err != nil {
+				log.Printf("write ended: device=%s peer=%s role=%s err=%v", p.deviceID, p.id, p.role, err)
 				return
 			}
 		case <-protocolTicker.C:
 			_ = p.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := p.conn.WriteMessage(websocket.BinaryMessage, heartbeatPacket()); err != nil {
+				log.Printf("protocol heartbeat write ended: device=%s peer=%s role=%s err=%v", p.deviceID, p.id, p.role, err)
 				return
 			}
 		case <-wsTicker.C:
 			_ = p.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := p.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Printf("ws ping write ended: device=%s peer=%s role=%s err=%v", p.deviceID, p.id, p.role, err)
 				return
 			}
 		}
