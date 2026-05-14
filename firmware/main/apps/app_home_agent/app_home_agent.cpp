@@ -9,6 +9,7 @@
 #include <assets/assets.h>
 #include <hal/hal.h>
 #include <fmt/format.h>
+#include <font_awesome.h>
 #include <mooncake.h>
 #include <mooncake_log.h>
 #include <smooth_lvgl.hpp>
@@ -20,6 +21,8 @@
 using namespace mooncake;
 using namespace stackchan;
 using namespace smooth_ui_toolkit::lvgl_cpp;
+
+LV_FONT_DECLARE(font_awesome_20_4);
 
 AppHomeAgent::AppHomeAgent()
 {
@@ -78,9 +81,7 @@ void AppHomeAgent::onOpen()
     if (!is_configured) {
         show_boot_line("Set relay in the app.");
     } else if (!network_ready) {
-        show_boot_line("WiFi unavailable. Swipe up to exit.");
-    } else {
-        show_boot_line("Relay link armed.");
+        show_boot_line("Wi-Fi unavailable");
     }
 
     view::create_home_indicator([&]() { close(); }, 0x00E5FF, 0x11183A);
@@ -289,9 +290,9 @@ void AppHomeAgent::create_hud(bool configured, bool networkReady)
     _hud_agent = std::make_unique<Label>(_hud_agent_chip->get());
     _hud_camera = std::make_unique<Label>(_hud_camera_chip->get());
 
-    _hud_relay->setTextFont(&lv_font_montserrat_16);
-    _hud_agent->setTextFont(&lv_font_montserrat_16);
-    _hud_camera->setTextFont(&lv_font_montserrat_16);
+    _hud_relay->setTextFont(&font_awesome_20_4);
+    _hud_agent->setTextFont(&font_awesome_20_4);
+    _hud_camera->setTextFont(&font_awesome_20_4);
     _hud_relay->align(LV_ALIGN_CENTER, 0, 0);
     _hud_agent->align(LV_ALIGN_CENTER, 0, 0);
     _hud_camera->align(LV_ALIGN_CENTER, 0, 0);
@@ -321,7 +322,7 @@ void AppHomeAgent::create_hud(bool configured, bool networkReady)
 
     _relay_online = configured && networkReady;
     update_hud();
-    set_agent_card("Codex uplink", configured ? (networkReady ? "Relay online. Waiting for agent." : "Wi-Fi unavailable.") : "Set relay in the app.");
+    set_agent_card("Home link", configured ? (networkReady ? "Waiting for home agent" : "Wi-Fi unavailable") : "Set relay in the app.");
 }
 
 void AppHomeAgent::update_hud()
@@ -330,9 +331,9 @@ void AppHomeAgent::update_hud()
         return;
     }
 
-    set_hud_chip(_hud_relay_chip.get(), _hud_relay.get(), _relay_online ? "RLY" : "RLY--", _relay_online);
-    set_hud_chip(_hud_agent_chip.get(), _hud_agent.get(), _agent_seen ? "AGT" : "AGT--", _agent_seen);
-    set_hud_chip(_hud_camera_chip.get(), _hud_camera.get(), _camera_active ? "CAM" : "CAM--", _camera_active);
+    set_hud_chip(_hud_relay_chip.get(), _hud_relay.get(), FONT_AWESOME_LINK, _relay_online);
+    set_hud_chip(_hud_agent_chip.get(), _hud_agent.get(), FONT_AWESOME_USER_ROBOT, _agent_seen);
+    set_hud_chip(_hud_camera_chip.get(), _hud_camera.get(), FONT_AWESOME_CAMERA, _camera_active);
 
     auto wifi = GetHAL().getWifiStatus();
     bool wifi_online = wifi != WifiStatus::None;
@@ -346,10 +347,10 @@ void AppHomeAgent::set_hud_chip(Container* chip, Label* label, const std::string
     if (!chip || !label) {
         return;
     }
-    chip->setBorderColor(lv_color_hex(online ? 0x14B8A6 : 0xFF66C4));
-    chip->setBgColor(lv_color_hex(online ? 0x091722 : 0x160B18));
+    chip->setBorderColor(lv_color_hex(online ? 0x14B8A6 : 0x334155));
+    chip->setBgColor(lv_color_hex(online ? 0x091722 : 0x10121F));
     label->setText(text);
-    label->setTextColor(lv_color_hex(online ? 0x5EEAD4 : 0xFBBF24));
+    label->setTextColor(lv_color_hex(online ? 0x5EEAD4 : 0x64748B));
 }
 
 void AppHomeAgent::set_agent_card(const std::string& label, const std::string& text, bool accent)
