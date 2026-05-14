@@ -81,8 +81,7 @@ void AppHomeAgent::onOpen()
     if (!is_configured) {
         show_boot_line("Set relay in the app.");
     } else if (!network_ready) {
-        GetHAL().enterWifiConfigMode();
-        show_boot_line("No Wi-Fi. Use phone hotspot or config app.");
+        show_boot_line("No Wi-Fi. Use phone hotspot or setup.");
     }
 
     view::create_home_indicator([&]() { close(); }, 0x00E5FF, 0x11183A);
@@ -299,7 +298,7 @@ void AppHomeAgent::create_hud(bool configured, bool networkReady)
 
     _relay_online = configured && networkReady;
     update_hud();
-    set_agent_card("Home link", configured ? (networkReady ? "Waiting for home agent" : "No Wi-Fi. Use phone hotspot or config app.") : "Set relay in the app.");
+    set_agent_card("Home link", configured ? (networkReady ? "Waiting for home agent" : "No Wi-Fi. Use phone hotspot or setup.") : "Set relay in the app.");
 }
 
 void AppHomeAgent::update_hud()
