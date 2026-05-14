@@ -7,6 +7,7 @@
 //   motion <json>        - send motion control JSON
 //   look <yaw> <pitch>   - look at angle (e.g. look 30 -10)
 //   dance <json>         - send dance sequence
+//   light <color> [ms]   - set both RGB lights, e.g. light #0000FF 1000
 //   ping                 - send heartbeat ping
 //   interactive          - enter interactive mode
 
@@ -70,14 +71,50 @@ function buildTextMessage(name, content) {
     return buildPacket(TYPE.TEXT, json);
 }
 
-function buildMotion(yaw, pitch) {
+function buildMotion(yaw, pitch, speed = 500) {
+    const servoSpeed = Math.max(1, parseInt(speed, 10) || 500);
     const json = JSON.stringify({
-        action: "look",
-        yaw: parseFloat(yaw),
-        pitch: parseFloat(pitch),
-        speed: 50
+        yawServo: {
+            angle: parseFloat(yaw) || 0,
+            speed: servoSpeed,
+        },
+        pitchServo: {
+            angle: parseFloat(pitch) || 0,
+            speed: servoSpeed,
+        },
     });
     return buildPacket(TYPE.MOTION, json);
+}
+
+function normalizeHexColor(value) {
+    if (!value) return '#000000';
+    if (/^[0-9a-fA-F]{6}$/.test(value)) return `#${value}`;
+    if (/^#[0-9a-fA-F]{6}$/.test(value)) return value;
+    throw new Error('color must be #RRGGBB');
+}
+
+function neutralLightPart(weight) {
+    return {
+        position: { x: 0, y: 0 },
+        rotation: 0,
+        weight,
+        size: 0,
+    };
+}
+
+function buildLight(color, durationMs = 1000) {
+    const rgb = normalizeHexColor(color);
+    const sequence = [{
+        leftEye: neutralLightPart(100),
+        rightEye: neutralLightPart(100),
+        mouth: neutralLightPart(0),
+        yawServo: { angle: 0, speed: 0 },
+        pitchServo: { angle: 0, speed: 0 },
+        leftRgbColor: rgb,
+        rightRgbColor: rgb,
+        durationMs: Math.max(1, parseInt(durationMs, 10) || 1000),
+    }];
+    return buildPacket(TYPE.DANCE, JSON.stringify(sequence));
 }
 
 function parsePacket(data) {
@@ -139,7 +176,7 @@ if (cmd === 'interactive') {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
     connect((ws) => {
-        console.log('Commands: say <name> <text> | look <yaw> <pitch> | avatar <json> | motion <json> | dance <json> | ping | quit');
+        console.log('Commands: say <name> <text> | look <yaw> <pitch> | light <#RRGGBB> [ms] | avatar <json> | motion <json> | dance <json> | ping | quit');
 
         const prompt = () => rl.question('> ', (line) => {
             const parts = line.trim().split(/\s+/);
@@ -169,7 +206,13 @@ if (cmd === 'interactive') {
                 ws.send(buildPacket(TYPE.DANCE, parts.slice(1).join(' ')));
                 console.log('➡ DANCE');
             }
-            else { console.log('Unknown command. Try: say, look, avatar, motion, dance, ping, quit'); }
+            else if (c === 'light') {
+                try {
+                    ws.send(buildLight(parts[1] || '#000000', parts[2] || 1000));
+                    console.log(`➡ LIGHT: color=${parts[1] || '#000000'} durationMs=${parts[2] || 1000}`);
+                } catch (err) { console.error('Error:', err.message); }
+            }
+            else { console.log('Unknown command. Try: say, look, light, avatar, motion, dance, ping, quit'); }
 
             prompt();
         });
@@ -189,6 +232,18 @@ if (cmd === 'interactive') {
         console.log(`➡ Look: yaw=${args[1]||0} pitch=${args[2]||0}`);
         setTimeout(() => { ws.close(); process.exit(0); }, 1000);
     });
+} else if (cmd === 'light') {
+    connect((ws) => {
+        try {
+            ws.send(buildLight(args[1] || '#000000', args[2] || 1000));
+            console.log(`➡ Light: color=${args[1] || '#000000'} durationMs=${args[2] || 1000}`);
+        } catch (err) {
+            console.error('Error:', err.message);
+            ws.close();
+            process.exit(1);
+        }
+        setTimeout(() => { ws.close(); process.exit(0); }, 1000);
+    });
 } else if (cmd === 'ping') {
     connect((ws) => {
         ws.send(buildPacket(TYPE.PING));
@@ -196,5 +251,5 @@ if (cmd === 'interactive') {
         setTimeout(() => { ws.close(); process.exit(0); }, 2000);
     });
 } else {
-    console.log('Usage: node ws_control.js [say|look|ping|interactive] [args...]');
+    console.log('Usage: node ws_control.js [say|look|light|ping|interactive] [args...]');
 }

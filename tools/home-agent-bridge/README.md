@@ -24,6 +24,12 @@ curl -X POST http://127.0.0.1:8790/look \
   -H 'Content-Type: application/json' \
   -d '{"yaw":200,"pitch":80,"speed":500}'
 curl -X POST http://127.0.0.1:8790/motion -d '{"yawServo":{"angle":200,"speed":500}}'
+curl -X POST http://127.0.0.1:8790/light \
+  -H 'Content-Type: application/json' \
+  -d '{"color":"#0000FF","durationMs":1000}'
+curl -X POST http://127.0.0.1:8790/light \
+  -H 'Content-Type: application/json' \
+  -d '{"color":"#000000","durationMs":500}'
 curl -X POST http://127.0.0.1:8790/camera/start
 curl -X POST http://127.0.0.1:8790/camera/stop
 curl -o snapshot.jpg -X POST http://127.0.0.1:8790/snapshot

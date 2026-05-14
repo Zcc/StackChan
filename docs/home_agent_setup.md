@@ -132,6 +132,20 @@ curl http://127.0.0.1:8790/status
 curl -X POST http://127.0.0.1:8790/say \
   -H 'Content-Type: application/json' \
   -d '{"name":"Codex","content":"HomeAgent route is online."}'
+
+curl -X POST http://127.0.0.1:8790/look \
+  -H 'Content-Type: application/json' \
+  -d '{"yaw":20,"pitch":0,"speed":500}'
+
+curl -X POST http://127.0.0.1:8790/light \
+  -H 'Content-Type: application/json' \
+  -d '{"color":"#0000FF","durationMs":1000}'
+
+curl -X POST http://127.0.0.1:8790/light \
+  -H 'Content-Type: application/json' \
+  -d '{"color":"#000000","durationMs":500}'
+
+curl -o snapshot.jpg -X POST http://127.0.0.1:8790/snapshot
 ```
 
 If `BRIDGE_TOKEN` is set:

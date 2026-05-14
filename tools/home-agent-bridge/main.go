@@ -69,6 +69,7 @@ func main() {
 	http.HandleFunc("/motion", b.withAuth(b.handleMotion))
 	http.HandleFunc("/avatar", b.withAuth(b.handleAvatar))
 	http.HandleFunc("/dance", b.withAuth(b.handleDance))
+	http.HandleFunc("/light", b.withAuth(b.handleLight))
 	http.HandleFunc("/camera/start", b.withAuth(b.handleCameraStart))
 	http.HandleFunc("/camera/stop", b.withAuth(b.handleCameraStop))
 	http.HandleFunc("/snapshot", b.withAuth(b.handleSnapshot))
@@ -290,6 +291,59 @@ func (b *bridge) handleDance(w http.ResponseWriter, r *http.Request) {
 	respondErr(w, b.sendPacket(danceSequence, payload))
 }
 
+func (b *bridge) handleLight(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Color      string `json:"color"`
+		LeftColor  string `json:"leftColor"`
+		RightColor string `json:"rightColor"`
+		DurationMs int    `json:"durationMs"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if req.Color != "" {
+		if req.LeftColor == "" {
+			req.LeftColor = req.Color
+		}
+		if req.RightColor == "" {
+			req.RightColor = req.Color
+		}
+	}
+	if req.LeftColor == "" {
+		req.LeftColor = "#000000"
+	}
+	if req.RightColor == "" {
+		req.RightColor = req.LeftColor
+	}
+	if req.DurationMs <= 0 {
+		req.DurationMs = 1000
+	}
+
+	left, err := normalizeHexColor(req.LeftColor)
+	if err != nil {
+		http.Error(w, "leftColor: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	right, err := normalizeHexColor(req.RightColor)
+	if err != nil {
+		http.Error(w, "rightColor: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	payload, _ := json.Marshal([]map[string]any{{
+		"leftEye":       neutralLightPart(),
+		"rightEye":      neutralLightPart(),
+		"mouth":         neutralMouthPart(),
+		"yawServo":      map[string]any{"angle": 0, "speed": 0},
+		"pitchServo":    map[string]any{"angle": 0, "speed": 0},
+		"leftRgbColor":  left,
+		"rightRgbColor": right,
+		"durationMs":    req.DurationMs,
+	}})
+	respondErr(w, b.sendPacket(danceSequence, payload))
+}
+
 func (b *bridge) handleCameraStart(w http.ResponseWriter, r *http.Request) {
 	respondErr(w, b.sendPacket(startCameraStream, nil))
 }
@@ -353,6 +407,36 @@ func respondErr(w http.ResponseWriter, err error) {
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})
+}
+
+func normalizeHexColor(value string) (string, error) {
+	if len(value) == 6 {
+		value = "#" + value
+	}
+	if len(value) != 7 || value[0] != '#' {
+		return "", fmt.Errorf("expected #RRGGBB")
+	}
+	for _, ch := range value[1:] {
+		if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')) {
+			return "", fmt.Errorf("expected #RRGGBB")
+		}
+	}
+	return value, nil
+}
+
+func neutralLightPart() map[string]any {
+	return map[string]any{
+		"position": map[string]any{"x": 0, "y": 0},
+		"rotation": 0,
+		"weight":   100,
+		"size":     0,
+	}
+}
+
+func neutralMouthPart() map[string]any {
+	part := neutralLightPart()
+	part["weight"] = 0
+	return part
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
