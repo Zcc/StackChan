@@ -81,9 +81,9 @@ public:
         NfcWrite          = 0x34,  // 入站 stub
         NfcEvent          = 0x35,  // 出站 stub
         PlayAudio         = 0x36,  // 入站 stub
-        MicStreamStart    = 0x37,  // 入站 stub
-        MicStreamStop     = 0x38,  // 入站 stub
-        MicAudio          = 0x39,  // 出站 stub (PCM/Opus)
+        MicStreamStart    = 0x37,  // 入站: JSON mic stream config
+        MicStreamStop     = 0x38,  // 入站: JSON {stream_id}
+        MicAudio          = 0x39,  // 出站: 16-byte header + Opus
         ScreenCapture     = 0x3A,  // 入站/响应 stub
         SdList            = 0x3B,  // 入站 stub
         MicStatus         = 0x3C,  // 出站: JSON {event:"started|stopped|stats", stream_id, ...}
@@ -174,6 +174,45 @@ public:
                                ",\"y\":" + std::to_string(event.y) + ",\"pressed\":" +
                                (event.pressed ? "true" : "false") + ",\"ts\":" + std::to_string(event.tsMs) + "}";
             sendPacket(DataType::ScreenTouchEvent, (const uint8_t*)json.c_str(), json.size());
+        });
+
+        GetHAL().Mic().SetFrameCallback([this](const stackchan::hal::MicFrame& frame) {
+            if (!isConnected()) {
+                return;
+            }
+            std::vector<uint8_t> payload;
+            payload.reserve(16 + frame.opusPayload.size());
+            appendBe32(payload, frame.streamHash);
+            appendBe32(payload, frame.seq);
+            appendBe64(payload, frame.timestampMs);
+            payload.insert(payload.end(), frame.opusPayload.begin(), frame.opusPayload.end());
+            sendPacket(DataType::MicAudio, payload.data(), payload.size());
+        });
+
+        GetHAL().Mic().SetStatusCallback([this](const stackchan::hal::MicStatusEvent& event) {
+            if (!isConnected()) {
+                return;
+            }
+            ArduinoJson::JsonDocument doc;
+            doc["event"] = event.kind == stackchan::hal::MicStatusEvent::Kind::Started    ? "started"
+                           : event.kind == stackchan::hal::MicStatusEvent::Kind::Stopped ? "stopped"
+                                                                                         : "stats";
+            doc["stream_id"] = event.streamId;
+            if (event.kind == stackchan::hal::MicStatusEvent::Kind::Started) {
+                doc["sample_rate"]       = event.startedConfig.sampleRate;
+                doc["channels"]          = event.startedConfig.channels;
+                doc["frame_duration_ms"] = event.startedConfig.frameDurationMs;
+                doc["duration_ms"]       = event.startedConfig.durationMs;
+            } else {
+                doc["frames"] = event.frames;
+                doc["bytes"]  = event.bytes;
+                if (event.kind == stackchan::hal::MicStatusEvent::Kind::Stopped) {
+                    doc["reason"] = event.reason;
+                }
+            }
+            std::string out;
+            ArduinoJson::serializeJson(doc, out);
+            sendPacket(DataType::MicStatus, (const uint8_t*)out.c_str(), out.size());
         });
     }
 
@@ -508,14 +547,30 @@ public:
                     handleGetDriverHealth();
                     break;
                 }
+                case DataType::MicStreamStart: {
+                    if (msg.data.size() < 5) {
+                        sendCapabilityError("mic", "invalid_args", "missing mic start payload", (int)type);
+                        break;
+                    }
+                    std::string payload(msg.data.begin() + 5, msg.data.end());
+                    handleMicStreamStart(payload, type);
+                    break;
+                }
+                case DataType::MicStreamStop: {
+                    if (msg.data.size() >= 5) {
+                        std::string payload(msg.data.begin() + 5, msg.data.end());
+                        handleMicStreamStop(payload, type);
+                    } else {
+                        GetHAL().Mic().Stop("user");
+                    }
+                    break;
+                }
                 // ---- B 类 stub: 协议号已保留，等待硬件驱动实现 ----
                 case DataType::IrSend:
                 case DataType::IrLearnStart:
                 case DataType::NfcRead:
                 case DataType::NfcWrite:
                 case DataType::PlayAudio:
-                case DataType::MicStreamStart:
-                case DataType::MicStreamStop:
                 case DataType::ScreenCapture:
                 case DataType::SdList:
                 case DataType::SdRead:
@@ -716,11 +771,28 @@ private:
         }
     }
 
-    void sendCapabilityError(DataType type, const char* code, const char* message)
+    static void appendBe32(std::vector<uint8_t>& out, uint32_t value)
+    {
+        out.push_back((value >> 24) & 0xFF);
+        out.push_back((value >> 16) & 0xFF);
+        out.push_back((value >> 8) & 0xFF);
+        out.push_back(value & 0xFF);
+    }
+
+    static void appendBe64(std::vector<uint8_t>& out, uint64_t value)
+    {
+        for (int shift = 56; shift >= 0; shift -= 8) {
+            out.push_back((value >> shift) & 0xFF);
+        }
+    }
+
+    void sendCapabilityError(const char* capability, const char* code, const char* message, int typeValue)
     {
         ArduinoJson::JsonDocument doc;
-        doc["type"]       = (int)type;
-        doc["capability"] = capabilityNameForType(type);
+        if (typeValue >= 0) {
+            doc["type"] = typeValue;
+        }
+        doc["capability"] = capability;
         doc["code"]       = code;
         doc["message"]    = message;
         doc["ts"]         = GetHAL().millis();
@@ -728,6 +800,11 @@ private:
         std::string out;
         ArduinoJson::serializeJson(doc, out);
         sendPacket(DataType::CapabilityError, (const uint8_t*)out.c_str(), out.size());
+    }
+
+    void sendCapabilityError(DataType type, const char* code, const char* message)
+    {
+        sendCapabilityError(capabilityNameForType(type), code, message, (int)type);
     }
 
     void handleGetDriverHealth()
@@ -750,6 +827,52 @@ private:
         std::string out;
         ArduinoJson::serializeJson(doc, out);
         sendPacket(DataType::GetDriverHealth, (const uint8_t*)out.c_str(), out.size());
+    }
+
+    void handleMicStreamStart(const std::string& payload, DataType requestType)
+    {
+        ArduinoJson::JsonDocument doc;
+        auto error = ArduinoJson::deserializeJson(doc, payload);
+        if (error) {
+            sendCapabilityError("mic", "invalid_args", "bad mic start json", (int)requestType);
+            return;
+        }
+
+        stackchan::hal::MicStreamConfig config;
+        if (doc["sample_rate"].is<uint32_t>()) {
+            config.sampleRate = doc["sample_rate"].as<uint32_t>();
+        }
+        if (doc["channels"].is<uint8_t>()) {
+            config.channels = doc["channels"].as<uint8_t>();
+        }
+        if (doc["frame_duration_ms"].is<uint16_t>()) {
+            config.frameDurationMs = doc["frame_duration_ms"].as<uint16_t>();
+        }
+        if (doc["duration_ms"].is<uint32_t>()) {
+            config.durationMs = doc["duration_ms"].as<uint32_t>();
+        }
+        if (doc["stream_id"].is<std::string>()) {
+            config.streamId = doc["stream_id"].as<std::string>();
+        }
+
+        std::string err;
+        if (!GetHAL().Mic().Start(config, &err)) {
+            const char* code = err.empty() ? "unavailable" : err.c_str();
+            sendCapabilityError("mic", code, "mic stream start failed", (int)requestType);
+        }
+    }
+
+    void handleMicStreamStop(const std::string& payload, DataType requestType)
+    {
+        if (!payload.empty()) {
+            ArduinoJson::JsonDocument doc;
+            auto error = ArduinoJson::deserializeJson(doc, payload);
+            if (error) {
+                sendCapabilityError("mic", "invalid_args", "bad mic stop json", (int)requestType);
+                return;
+            }
+        }
+        GetHAL().Mic().Stop("user");
     }
 
     void handleSetBrightness(const std::string& payload)
