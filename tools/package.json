@@ -3,7 +3,8 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "check:ws-control": "node --check ws_control.js"
+    "check:ws-control": "node --check ws_control.js",
+    "check:home-agent-skill": "node --check ../skills/stackchan-home-agent/bin/stackchan-home-agent.js"
   },
   "dependencies": {
     "ws": "^8.18.3"

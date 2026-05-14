@@ -165,6 +165,23 @@ The first phase is considered stable when:
 - The home bridge can send text to the screen.
 - Basic control commands, such as motion and light control, work through the bridge or relay client.
 
+## 9. Use The Universal Agent Skill
+
+The repository includes a portable skill at `skills/stackchan-home-agent/SKILL.md`. It exposes StackChan through the local bridge without requiring agents to know the relay protocol.
+
+Run the skill command from the repository root:
+
+```bash
+node skills/stackchan-home-agent/bin/stackchan-home-agent.js status
+node skills/stackchan-home-agent/bin/stackchan-home-agent.js say "Hello from a local agent" --name Codex
+node skills/stackchan-home-agent/bin/stackchan-home-agent.js look --yaw 20 --pitch 0 --speed 500
+node skills/stackchan-home-agent/bin/stackchan-home-agent.js light '#0000FF' --duration 1000
+node skills/stackchan-home-agent/bin/stackchan-home-agent.js light-off
+node skills/stackchan-home-agent/bin/stackchan-home-agent.js photo --out /tmp/stackchan_snapshot.jpg
+```
+
+Agents that support generic skills can load the `SKILL.md` file and call the bundled command. Real relay credentials stay in `tools/.env.local` or the bridge environment.
+
 ## Troubleshooting
 
 If HomeAgent says `Set relay in the app`, run `./tools/config_homeagent.sh get` and confirm `relayUrl` and `hasToken`.
