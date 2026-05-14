@@ -116,6 +116,20 @@ node skills/stackchan-home-agent/bin/stackchan-home-agent.js camera-stop
 
 Prefer single snapshots over streaming unless the user needs continuous visual feedback.
 
+### mic-listen
+
+Pull realtime microphone audio from StackChan as Opus 16 kHz mono 60 ms frames:
+
+```bash
+node skills/stackchan-home-agent/bin/stackchan-home-agent.js mic-listen --out captured.opus --duration-ms 10000
+```
+
+Decode the captured stream with an Opus tool such as:
+
+```bash
+opusdec --rate 16000 captured.opus captured.wav
+```
+
 ## Safety And Behavior
 
 - Check `status` before assuming StackChan is reachable.

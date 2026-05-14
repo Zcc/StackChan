@@ -1,7 +1,11 @@
 #!/usr/bin/env node
-const fs = require('fs');
-const path = require('path');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import WsWebSocket from 'ws';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../..');
 loadEnv(process.env.HOMEAGENT_ENV_FILE || path.join(repoRoot, 'tools/.env.local'));
 
@@ -33,6 +37,8 @@ async function main() {
       return printJSON(await requestJSON('POST', '/camera/start'));
     case 'camera-stop':
       return printJSON(await requestJSON('POST', '/camera/stop'));
+    case 'mic-listen':
+      return process.exitCode = await micListen(args);
     case 'help':
     case '--help':
     case '-h':
@@ -73,6 +79,88 @@ async function photo(endpoint, args, method = 'POST') {
   const data = await requestBuffer(method, endpoint);
   fs.writeFileSync(out, data);
   return printJSON({ ok: true, path: out, bytes: data.length, mimeType: 'image/jpeg' });
+}
+
+async function micListen(args) {
+  const out = readOption(args, '--out') || '';
+  const durationArg = readOption(args, '--duration-ms') || readOption(args, '--durationMs') || '';
+  const durationMs = durationArg ? numberOptionValue(durationArg, '--duration-ms') : undefined;
+  return runMicListen({ bridge: bridgeURL, token: bridgeToken, out, durationMs });
+}
+
+export async function runMicListen({ bridge = bridgeURL, token = bridgeToken, out = '', durationMs } = {}) {
+  const base = trimTrailingSlash(bridge);
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const body = {};
+  if (durationMs !== undefined) body.duration_ms = durationMs;
+
+  const startRes = await fetch(`${base}/mic/start`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!startRes.ok) return 2;
+
+  const file = out ? fs.createWriteStream(out) : null;
+  let ws;
+  const sigintHandler = () => {
+    closeWebSocket(ws);
+  };
+  process.once('SIGINT', sigintHandler);
+
+  try {
+    ws = createMicWebSocket(`${httpToWs(base)}/mic/ws`, headers);
+    await consumeMicWebSocket(ws, (data) => {
+      if (data.length < 16) return;
+      const payload = data.subarray(16);
+      if (file) file.write(payload);
+    });
+  } finally {
+    process.removeListener('SIGINT', sigintHandler);
+    if (file) await new Promise((resolve, reject) => file.end((err) => (err ? reject(err) : resolve())));
+    await fetch(`${base}/mic/stop`, { method: 'POST', headers }).catch(() => {});
+  }
+
+  return 0;
+}
+
+function createMicWebSocket(url, headers) {
+  if (Object.keys(headers).length === 0 && typeof globalThis.WebSocket === 'function') {
+    return new globalThis.WebSocket(url);
+  }
+  return new WsWebSocket(url, { headers });
+}
+
+function consumeMicWebSocket(ws, onBinary) {
+  if (typeof ws.on === 'function') {
+    return new Promise((resolve, reject) => {
+      ws.on('message', (data, isBinary) => {
+        if (!isBinary) return;
+        onBinary(Buffer.from(data));
+      });
+      ws.on('close', resolve);
+      ws.on('error', reject);
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    ws.binaryType = 'arraybuffer';
+    ws.addEventListener('message', (event) => {
+      if (typeof event.data === 'string') return;
+      onBinary(Buffer.from(event.data));
+    });
+    ws.addEventListener('close', resolve, { once: true });
+    ws.addEventListener('error', reject, { once: true });
+  });
+}
+
+function closeWebSocket(ws) {
+  if (!ws) return;
+  if (typeof ws.close === 'function') ws.close();
+}
+
+function httpToWs(value) {
+  return value.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
 }
 
 async function requestJSON(method, endpoint, body) {
@@ -147,7 +235,10 @@ function readOption(args, name) {
 }
 
 function numberOption(args, name, fallback) {
-  const value = readOption(args, name) || fallback;
+  return numberOptionValue(readOption(args, name) || fallback, name);
+}
+
+function numberOptionValue(value, name) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) throw new Error(`${name} must be a number`);
   return parsed;
@@ -186,10 +277,12 @@ function printJSON(value) {
 }
 
 function help() {
-  process.stdout.write(`Usage: stackchan-home-agent <command> [args]\n\nCommands:\n  status\n  say <text> [--name Name]\n  look --yaw <n> --pitch <n> [--speed <n>]\n  light <#RRGGBB> [--duration <ms>]\n  light-off\n  photo [--out path]\n  latest-photo [--out path]\n  camera-start\n  camera-stop\n`);
+  process.stdout.write(`Usage: stackchan-home-agent <command> [args]\n\nCommands:\n  status\n  say <text> [--name Name]\n  look --yaw <n> --pitch <n> [--speed <n>]\n  light <#RRGGBB> [--duration <ms>]\n  light-off\n  photo [--out path]\n  latest-photo [--out path]\n  camera-start\n  camera-stop\n  mic-listen [--out path] [--duration-ms ms]\n`);
 }
 
-main().catch((err) => {
-  process.stderr.write(`${JSON.stringify({ ok: false, error: err.message })}\n`);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main().catch((err) => {
+    process.stderr.write(`${JSON.stringify({ ok: false, error: err.message })}\n`);
+    process.exit(1);
+  });
+}

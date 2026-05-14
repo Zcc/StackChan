@@ -1,0 +1,11 @@
+{
+  "name": "stackchan-home-agent-skill",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
