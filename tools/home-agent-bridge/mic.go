@@ -1,6 +1,11 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -91,4 +96,79 @@ func (s *micState) currentStreamID() string {
 		return s.streamID
 	}
 	return s.pending
+}
+
+const (
+	micDefaultDurationMs = 30000
+	micMaxDurationMs     = 300000
+	micFrameDurationMs   = 60
+	micSampleRate        = 16000
+)
+
+type micStartReq struct {
+	DurationMs int `json:"duration_ms"`
+}
+
+type micStartResp struct {
+	StreamID   string `json:"stream_id"`
+	DurationMs int    `json:"duration_ms"`
+}
+
+func newStreamID() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+func (b *bridge) handleMicStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if b.mic == nil {
+		b.mic = newMicState()
+	}
+	var req micStartReq
+	if r.Body != nil {
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !strings.Contains(err.Error(), "EOF") {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	dur := req.DurationMs
+	if dur <= 0 {
+		dur = micDefaultDurationMs
+	}
+	if dur > micMaxDurationMs {
+		dur = micMaxDurationMs
+	}
+	streamID := newStreamID()
+	if !b.mic.beginStart(streamID, dur, time.Now()) {
+		http.Error(w, `{"code":"mic.busy"}`, http.StatusConflict)
+		return
+	}
+	cfg := map[string]any{
+		"sample_rate":       micSampleRate,
+		"channels":          1,
+		"frame_duration_ms": micFrameDurationMs,
+		"duration_ms":       dur,
+		"stream_id":         streamID,
+	}
+	payload, _ := json.Marshal(cfg)
+	if err := b.sendMicPacket(micStreamStart, payload); err != nil {
+		b.mic.markStopped(streamID, "error", 0, 0)
+		http.Error(w, "device send failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(micStartResp{StreamID: streamID, DurationMs: dur})
+}
+
+func (b *bridge) sendMicPacket(typeID byte, payload []byte) error {
+	if b.sendPacketHook != nil {
+		return b.sendPacketHook(typeID, payload)
+	}
+	return b.sendPacket(typeID, payload)
 }
