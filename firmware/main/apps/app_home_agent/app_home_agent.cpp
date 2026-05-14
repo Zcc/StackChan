@@ -101,14 +101,6 @@ void AppHomeAgent::onRunning()
         _speech_clear_tick = 0;
     }
 
-    if (_speech_clear_tick == 0 && GetHAL().millis() - _last_idle_tick > 9000) {
-        _last_idle_tick = GetHAL().millis();
-        if (stackchan.hasAvatar()) {
-            stackchan.addModifier(std::make_unique<TimedSpeechModifier>("HomeAgent online.", 1800));
-            stackchan.addModifier(std::make_unique<TimedEmotionModifier>(avatar::Emotion::Doubt, 1000));
-        }
-    }
-
     GetStackChan().update();
     if (GetHAL().millis() - _last_hud_tick > 1000) {
         _last_hud_tick = GetHAL().millis();
@@ -126,6 +118,9 @@ void AppHomeAgent::onClose()
     {
         LvglLockGuard lock;
         GetStackChan().resetAvatar();
+        _agent_card_text.reset();
+        _agent_card_label.reset();
+        _agent_card.reset();
         _hud_camera.reset();
         _hud_agent.reset();
         _hud_relay.reset();
@@ -216,9 +211,7 @@ void AppHomeAgent::bind_ws_events()
 
 void AppHomeAgent::show_boot_line(const std::string& line)
 {
-    auto& stackchan = GetStackChan();
-    stackchan.addModifier(std::make_unique<TimedSpeechModifier>(line, 3200));
-    stackchan.addModifier(std::make_unique<TimedEmotionModifier>(avatar::Emotion::Happy, 1600));
+    set_agent_card("HomeAgent", line, true);
 }
 
 void AppHomeAgent::show_agent_message(const std::string& name, const std::string& content)
@@ -226,6 +219,8 @@ void AppHomeAgent::show_agent_message(const std::string& name, const std::string
     auto speaker = name.empty() ? "Agent" : name;
     auto speech = fmt::format("{}: {}", speaker, content);
     mclog::tagInfo(getAppInfo().name, "show agent message: {}", speech);
+
+    set_agent_card(speaker, content, true);
 
     auto& stackchan = GetStackChan();
     if (stackchan.hasAvatar()) {
@@ -301,8 +296,32 @@ void AppHomeAgent::create_hud(bool configured, bool networkReady)
     _hud_agent->align(LV_ALIGN_CENTER, 0, 0);
     _hud_camera->align(LV_ALIGN_CENTER, 0, 0);
 
+    _agent_card = std::make_unique<Container>(lv_screen_active());
+    _agent_card->setSize(292, 42);
+    _agent_card->align(LV_ALIGN_BOTTOM_MID, 0, -10);
+    _agent_card->setBgColor(lv_color_hex(0x090B16));
+    _agent_card->setBgOpa(LV_OPA_80);
+    _agent_card->setBorderWidth(1);
+    _agent_card->setBorderColor(lv_color_hex(0xFF66C4));
+    _agent_card->setRadius(7);
+    _agent_card->setPadding(8, 8, 3, 3);
+    _agent_card->removeFlag(LV_OBJ_FLAG_SCROLLABLE);
+    _agent_card->addFlag(LV_OBJ_FLAG_FLOATING);
+
+    _agent_card_label = std::make_unique<Label>(_agent_card->get());
+    _agent_card_label->setTextFont(&lv_font_montserrat_16);
+    _agent_card_label->setTextColor(lv_color_hex(0x67E8F9));
+    _agent_card_label->align(LV_ALIGN_TOP_LEFT, 0, -2);
+
+    _agent_card_text = std::make_unique<Label>(_agent_card->get());
+    _agent_card_text->setTextFont(&lv_font_montserrat_16);
+    _agent_card_text->setTextColor(lv_color_hex(0xF8FAFC));
+    _agent_card_text->setWidth(274);
+    _agent_card_text->align(LV_ALIGN_BOTTOM_LEFT, 0, 2);
+
     _relay_online = configured && networkReady;
     update_hud();
+    set_agent_card("Codex uplink", configured ? (networkReady ? "Relay online. Waiting for agent." : "Wi-Fi unavailable.") : "Set relay in the app.");
 }
 
 void AppHomeAgent::update_hud()
@@ -331,6 +350,16 @@ void AppHomeAgent::set_hud_chip(Container* chip, Label* label, const std::string
     chip->setBgColor(lv_color_hex(online ? 0x091722 : 0x160B18));
     label->setText(text);
     label->setTextColor(lv_color_hex(online ? 0x5EEAD4 : 0xFBBF24));
+}
+
+void AppHomeAgent::set_agent_card(const std::string& label, const std::string& text, bool accent)
+{
+    if (!_agent_card || !_agent_card_label || !_agent_card_text) {
+        return;
+    }
+    _agent_card_label->setText(label);
+    _agent_card_text->setText(text);
+    _agent_card->setBorderColor(lv_color_hex(accent ? 0xFF66C4 : 0x14B8A6));
 }
 
 std::string AppHomeAgent::wifi_status_text() const
