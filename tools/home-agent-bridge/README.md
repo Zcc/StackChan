@@ -58,7 +58,7 @@ curl -H 'Authorization: Bearer local-agent-token' http://127.0.0.1:8790/status
 | `POST /factory-reset` | `0x25` | ⚠️ 出厂重置 |
 | `POST /rgb` `{leds:[{i,r,g,b}\|{i,color:"#RRGGBB"}]}` | `0x26` | 12 颗 RGB 单独控制 |
 | `POST /rgb/all` `{color:"#RRGGBB"}` 或 `{r,g,b}` | `0x27` | 12 颗整体显示一种颜色 |
-| `GET /events` (SSE) | — | 订阅出站事件：`imu`、`headTouch`、`screenTouch`、`button`、`ir`、`nfc`、`servoFeedback`、`proximityLight`、`micAudio` |
+| `GET /events` (SSE) | — | 订阅出站事件：`imu`、`headTouch`、`screenTouch`、`button`、`ir`、`nfc`、`servoFeedback`、`proximityLight`、`mic.started`、`mic.stopped`、`mic.stats` |
 | `GET /capabilities` | — | 查询能力状态：`available/stub` |
 | `GET /health/drivers` | `0x40` | 查询固件驱动健康状态（Phase1 为 probe/null 驱动） |
 
@@ -68,6 +68,16 @@ curl -H 'Authorization: Bearer local-agent-token' http://127.0.0.1:8790/status
 - `screenTouch` `{state:"down"\|"move"\|"up", x, y, pressed, ts}` — 来自 LVGL 触摸读取回调
 
 `/events` 支持类型过滤：`GET /events?types=imu,headTouch`。SSE 帧带 `event:` 字段，慢消费者会丢弃最旧消息以避免全局阻塞。
+
+### Microphone (Opus stream)
+
+- `POST /mic/start` body `{duration_ms?: <=300000}` returns `{stream_id, duration_ms}`; returns `409` when a stream is already active.
+- `POST /mic/stop` returns `{stream_id, stopping:true}`; returns `204` when idle.
+- `GET /mic/status` returns `{active, stream_id?, started_at?, duration_ms?, frames, bytes}`.
+- `GET /mic/ws` upgrades to a WebSocket. It allows one subscriber and sends binary frames as `[16-byte header + Opus payload]`; text frames carry `{"type":"mic.started|stopped|stats", ...}`; returns `409` if already subscribed.
+- SSE event types: `mic.started`, `mic.stopped`, `mic.stats` (filter via `/events?types=mic.*`).
+
+Header layout (binary): `u32 BE stream_hash | u32 BE seq | u64 BE timestamp_ms | opus_payload`.
 
 ### 协议号已保留、固件 stub（B 类）
 
@@ -91,14 +101,12 @@ curl -H 'Authorization: Bearer local-agent-token' http://127.0.0.1:8790/status
 | `POST /nfc/read` | `0x33` | 读取 NFC 卡 |
 | `POST /nfc/write` | `0x34` | 写入 NFC 卡 |
 | `POST /audio/play` | `0x36` | 播放任意音频流 |
-| `POST /mic/start` | `0x37` | 开始麦克风上行 |
-| `POST /mic/stop` | `0x38` | 停止麦克风上行 |
 | `GET  /screen/snapshot` | `0x3A` | 抓取 LCD 帧 |
 | `GET  /sd/list?path=/` | `0x3B` | microSD 列目录 |
 | `GET  /sd/read?path=…` | `0x3C` | microSD 读文件 |
 | `POST /sd/write` | `0x3D` | microSD 写文件 |
 
-事件类（出站、固件待实现）：`screenTouch (0x2A)`、`button (0x2B)`、`ir (0x32)`、`nfc (0x35)`、`micAudio (0x39)`、`servoFeedback (0x3E)`、`proximityLight (0x3F)`。
+事件类（出站、固件待实现）：`screenTouch (0x2A)`、`button (0x2B)`、`ir (0x32)`、`nfc (0x35)`、`servoFeedback (0x3E)`、`proximityLight (0x3F)`。
 
 ### 示例
 
