@@ -15,6 +15,8 @@ file(GLOB_RECURSE STACK_CHAN_SOURCES
     "stackchan/*.cc"
     "stackchan/*.cpp"
 )
+list(FILTER STACK_CHAN_SOURCES EXCLUDE REGEX ".*/hal/hal_mic\\.cpp$")
+list(APPEND STACK_CHAN_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/hal/hal_mic.cpp")
 set(STACK_CHAN_INCLUDE_DIRS 
     "."
 )

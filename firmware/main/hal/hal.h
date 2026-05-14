@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #pragma once
+#include "hal_mic.h"
 #include <memory>
 #include <cstdint>
 #include <string>
@@ -319,9 +320,11 @@ public:
     /* ---------------------------------- Audio --------------------------------- */
     void setSpeakerVolume(uint8_t volume, bool permanent = false);
     uint8_t getSpeakerVolume();
+    stackchan::hal::MicSubsystem& Mic();
 
 private:
     bool _xiaozhi_start_requested = false;
+    stackchan::hal::MicSubsystem _mic;
 
     void xiaozhi_board_init();
     void lvgl_init();

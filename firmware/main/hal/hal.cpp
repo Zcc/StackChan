@@ -274,6 +274,11 @@ uint8_t Hal::getSpeakerVolume()
     return hal_bridge::board_get_speaker_volume();
 }
 
+stackchan::hal::MicSubsystem& Hal::Mic()
+{
+    return _mic;
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                    Lvgl                                    */
 /* -------------------------------------------------------------------------- */
