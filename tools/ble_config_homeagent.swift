@@ -93,7 +93,7 @@ class BLEConfigurator: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
                 exit(1)
             }
             json = """
-            {"cmd":"setHomeAgent","enabled":true,"relayUrl":"\(RELAY_URL)","token":"\(RELAY_TOKEN)","deviceId":"\(DEVICE_ID)"}
+            {"cmd":"setHomeAgent","data":{"enabled":true,"relayUrl":"\(RELAY_URL)","token":"\(RELAY_TOKEN)","deviceId":"\(DEVICE_ID)"}}
             """
             print("Setting HomeAgent config:")
             print("  relayUrl: \(RELAY_URL)")

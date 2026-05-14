@@ -45,19 +45,22 @@ void AppHomeAgent::onOpen()
     }
 
     auto config = GetHAL().getHomeAgentConfig();
-    if (!config.enabled || config.relayUrl.empty()) {
+    bool is_configured = config.enabled && !config.relayUrl.empty();
+    bool network_ready = false;
+
+    if (is_configured) {
+        constexpr uint32_t network_timeout_ms = 20000;
+        network_ready = GetHAL().startWebSocketAvatarService(
+            [&](std::string_view msg) {
+                LvglLockGuard lock;
+                loading_page->setMessage(msg);
+            },
+            network_timeout_ms);
+    } else {
         LvglLockGuard lock;
         loading_page->setMessage("HOME.AGENT\nnot configured");
-        GetHAL().delay(1400);
+        GetHAL().delay(1200);
     }
-
-    constexpr uint32_t network_timeout_ms = 20000;
-    bool network_ready = GetHAL().startWebSocketAvatarService(
-        [&](std::string_view msg) {
-            LvglLockGuard lock;
-            loading_page->setMessage(msg);
-        },
-        network_timeout_ms);
 
     LvglLockGuard lock;
     loading_page.reset();
@@ -66,10 +69,12 @@ void AppHomeAgent::onOpen()
     bind_ws_events();
     _video_window = std::make_unique<view::VideoWindow>(lv_screen_active());
 
-    if (!network_ready) {
+    if (!is_configured) {
+        show_boot_line("Set relay in the app.");
+    } else if (!network_ready) {
         show_boot_line("WiFi unavailable. Swipe up to exit.");
     } else {
-        show_boot_line(config.enabled ? "Relay link armed." : "Set relay in the app.");
+        show_boot_line("Relay link armed.");
     }
 
     view::create_home_indicator([&]() { close(); }, 0x00E5FF, 0x11183A);
@@ -81,9 +86,17 @@ void AppHomeAgent::onRunning()
     std::lock_guard<std::mutex> lock(_mutex);
     LvglLockGuard lvgl_lock;
 
-    if (GetHAL().millis() - _last_idle_tick > 9000) {
+    auto& stackchan = GetStackChan();
+
+    if (_speech_clear_tick > 0 && GetHAL().millis() >= _speech_clear_tick) {
+        if (stackchan.hasAvatar()) {
+            stackchan.avatar().clearSpeech();
+        }
+        _speech_clear_tick = 0;
+    }
+
+    if (_speech_clear_tick == 0 && GetHAL().millis() - _last_idle_tick > 9000) {
         _last_idle_tick = GetHAL().millis();
-        auto& stackchan = GetStackChan();
         if (stackchan.hasAvatar()) {
             stackchan.addModifier(std::make_unique<TimedSpeechModifier>("HomeAgent online.", 1800));
             stackchan.addModifier(std::make_unique<TimedEmotionModifier>(avatar::Emotion::Doubt, 1000));
@@ -170,10 +183,16 @@ void AppHomeAgent::show_boot_line(const std::string& line)
 void AppHomeAgent::show_agent_message(const std::string& name, const std::string& content)
 {
     auto speaker = name.empty() ? "Agent" : name;
+    auto speech = fmt::format("{}: {}", speaker, content);
+    mclog::tagInfo(getAppInfo().name, "show agent message: {}", speech);
+
     auto& stackchan = GetStackChan();
-    stackchan.addModifier(std::make_unique<TimedSpeechModifier>(fmt::format("{}: {}", speaker, content), 6500));
+    if (stackchan.hasAvatar()) {
+        stackchan.avatar().setSpeech(speech);
+        stackchan.avatar().setEmotion(avatar::Emotion::Happy);
+        _speech_clear_tick = GetHAL().millis() + 8000;
+    }
     stackchan.addModifier(std::make_unique<SpeakingModifier>(2200));
-    stackchan.addModifier(std::make_unique<TimedEmotionModifier>(avatar::Emotion::Happy, 1800));
 }
 
 void AppHomeAgent::check_auto_angle_sync_mode()

@@ -27,6 +27,7 @@ private:
 
     uint32_t _last_motion_cmd_tick = 0;
     uint32_t _last_idle_tick       = 0;
+    uint32_t _speech_clear_tick    = 0;
     std::unique_ptr<view::VideoWindow> _video_window;
 
     void attach_avatar();

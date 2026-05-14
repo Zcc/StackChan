@@ -31,6 +31,9 @@ static std::string _tag = "WS-Avatar";
 static const std::string _setting_ns              = "stackchan";
 static const std::string _setting_device_name_key = "device_name";
 static const std::string _home_agent_setting_ns   = "home_agent";
+static const std::string _home_agent_default_relay_url = "";
+static const std::string _home_agent_default_device_id = "";
+static const std::string _home_agent_default_token     = "";
 
 class WebSocketAvatar {
 public:
@@ -602,10 +605,22 @@ HomeAgentConfig_t Hal::getHomeAgentConfig()
 {
     Settings settings(_home_agent_setting_ns, false);
     HomeAgentConfig_t config;
-    config.enabled = settings.GetBool("enabled", false);
-    config.relayUrl = settings.GetString("relay_url", "");
-    config.deviceId = settings.GetString("device_id", getFactoryMacString(""));
-    config.token = settings.GetString("token", "");
+    config.enabled = settings.GetBool("enabled", true);
+    config.relayUrl = settings.GetString("relay_url", _home_agent_default_relay_url);
+    config.deviceId = settings.GetString("device_id", _home_agent_default_device_id);
+    config.token = settings.GetString("token", _home_agent_default_token);
+
+    if (config.relayUrl.empty()) {
+        config.enabled = true;
+        config.relayUrl = _home_agent_default_relay_url;
+    }
+    if (config.deviceId.empty()) {
+        config.deviceId = _home_agent_default_device_id;
+    }
+    if (config.token.empty()) {
+        config.token = _home_agent_default_token;
+    }
+
     return config;
 }
 
