@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -72,5 +73,34 @@ func TestHandleCapabilities(t *testing.T) {
 	}
 	if body["imu"] != "available" {
 		t.Fatalf("expected imu=available, got %#v", body["imu"])
+	}
+}
+
+func TestMapMicCapabilityError(t *testing.T) {
+	cases := map[string]int{
+		"busy":         http.StatusConflict,
+		"unavailable":  http.StatusServiceUnavailable,
+		"invalid_args": http.StatusBadRequest,
+		"unknown":      http.StatusBadGateway,
+	}
+	for code, want := range cases {
+		if got := mapCapabilityError("mic", code); got != want {
+			t.Fatalf("mic/%s want %d got %d", code, want, got)
+		}
+	}
+}
+
+func TestCapabilitiesIncludesMic(t *testing.T) {
+	b := &bridge{}
+	req := httptest.NewRequest(http.MethodGet, "/capabilities", nil)
+	rec := httptest.NewRecorder()
+	b.handleCapabilities(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"mic"`) || !strings.Contains(body, `"format":"opus"`) || !strings.Contains(body, `"frame_duration_ms":60`) {
+		t.Fatalf("mic capability missing: %s", body)
 	}
 }

@@ -376,11 +376,11 @@ func (b *bridge) handleLook(w http.ResponseWriter, r *http.Request) {
 	}
 	payload, _ := json.Marshal(map[string]any{
 		"yawServo": map[string]any{
-			"angle": req.Yaw,
+			"angle": req.Yaw * 10,
 			"speed": req.Speed,
 		},
 		"pitchServo": map[string]any{
-			"angle": req.Pitch,
+			"angle": req.Pitch * 10,
 			"speed": req.Speed,
 		},
 	})
@@ -842,6 +842,13 @@ func (b *bridge) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		"ir":           "stub",
 		"nfc":          "stub",
 		"ambientLight": "stub",
+		"mic": map[string]any{
+			"format":            "opus",
+			"sample_rate":       micSampleRate,
+			"channels":          1,
+			"frame_duration_ms": micFrameDurationMs,
+			"max_duration_ms":   micMaxDurationMs,
+		},
 	})
 }
 
@@ -866,7 +873,24 @@ func parseEventFilter(raw string) map[string]struct{} {
 	return out
 }
 
-func mapCapabilityError(code string) int {
+func mapCapabilityError(capabilityOrCode string, codeOpt ...string) int {
+	capability, code := "", capabilityOrCode
+	if len(codeOpt) > 0 {
+		capability = capabilityOrCode
+		code = codeOpt[0]
+	}
+	if capability == "mic" {
+		switch code {
+		case "busy":
+			return http.StatusConflict
+		case "unavailable":
+			return http.StatusServiceUnavailable
+		case "invalid_args":
+			return http.StatusBadRequest
+		default:
+			return http.StatusBadGateway
+		}
+	}
 	switch code {
 	case "bad_request":
 		return http.StatusUnprocessableEntity
