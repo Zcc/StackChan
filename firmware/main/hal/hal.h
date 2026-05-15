@@ -5,6 +5,7 @@
  */
 #pragma once
 #include "hal_mic.h"
+#include "hal_speaker.h"
 #include <memory>
 #include <cstdint>
 #include <string>
@@ -321,10 +322,12 @@ public:
     void setSpeakerVolume(uint8_t volume, bool permanent = false);
     uint8_t getSpeakerVolume();
     stackchan::hal::MicSubsystem& Mic();
+    stackchan::hal::SpeakerSubsystem& Speaker();
 
 private:
     bool _xiaozhi_start_requested = false;
     stackchan::hal::MicSubsystem _mic;
+    stackchan::hal::SpeakerSubsystem _speaker;
 
     void xiaozhi_board_init();
     void lvgl_init();

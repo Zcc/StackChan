@@ -63,6 +63,8 @@ const (
 	sdWrite          byte = 0x43
 	servoFeedback    byte = 0x44
 	proximityLight   byte = 0x45
+	audioStatus      byte = 0x3D
+	stopAudioStream  byte = 0x19
 	capabilityError  byte = 0x4F
 )
 
@@ -80,6 +82,7 @@ type bridge struct {
 	snapshotWait   chan []byte
 	writeMu        sync.Mutex
 	mic            *micState
+	audio          *audioState
 	micSubMu       sync.Mutex
 	micSub         *micSub
 	sendPacketHook func(byte, []byte) error
@@ -123,6 +126,7 @@ func main() {
 		replyWaiters: make(map[byte][]chan []byte),
 		subscribers:  make(map[string]*subscriber),
 		mic:          newMicState(),
+		audio:        newAudioState(),
 	}
 	go b.connectLoop(context.Background())
 
@@ -155,7 +159,12 @@ func main() {
 	http.HandleFunc("/ir/learn/start", b.withAuth(b.handleIrLearn))
 	http.HandleFunc("/nfc/read", b.withAuth(b.stubHandler(nfcRead, "nfc.read")))
 	http.HandleFunc("/nfc/write", b.withAuth(b.stubHandler(nfcWrite, "nfc.write")))
-	http.HandleFunc("/audio/play", b.withAuth(b.stubHandler(playAudio, "audio.play")))
+	http.HandleFunc("/audio/play", b.withAuth(b.handleAudioStart))
+	http.HandleFunc("/audio/start", b.withAuth(b.handleAudioStart))
+	http.HandleFunc("/audio/feed", b.withAuth(b.handleAudioFeed))
+	http.HandleFunc("/audio/stop", b.withAuth(b.handleAudioStop))
+	http.HandleFunc("/audio/status", b.withAuth(b.handleAudioStatus))
+	http.HandleFunc("/tts/speak", b.withAuth(b.handleTTSSpeak))
 	http.HandleFunc("/mic/start", b.withAuth(b.handleMicStart))
 	http.HandleFunc("/mic/stop", b.withAuth(b.handleMicStop))
 	http.HandleFunc("/mic/status", b.withAuth(b.handleMicStatus))
@@ -294,6 +303,8 @@ func (b *bridge) readLoop(conn *websocket.Conn) {
 			b.dispatchMicStatus(payload)
 		case micAudio:
 			b.dispatchMicAudio(payload)
+		case audioStatus:
+			b.dispatchAudioStatus(payload)
 		}
 	}
 }
@@ -849,6 +860,13 @@ func (b *bridge) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 			"frame_duration_ms": micFrameDurationMs,
 			"max_duration_ms":   micMaxDurationMs,
 		},
+		"audio": map[string]any{
+			"format":            "opus",
+			"sample_rate":       audioSampleRate,
+			"channels":          1,
+			"frame_duration_ms": audioFrameDurationMs,
+			"max_duration_ms":   audioMaxDurationMs,
+		},
 	})
 }
 
@@ -879,7 +897,7 @@ func mapCapabilityError(capabilityOrCode string, codeOpt ...string) int {
 		capability = capabilityOrCode
 		code = codeOpt[0]
 	}
-	if capability == "mic" {
+	if capability == "mic" || capability == "audio" {
 		switch code {
 		case "busy":
 			return http.StatusConflict

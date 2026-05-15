@@ -58,7 +58,7 @@ curl -H 'Authorization: Bearer local-agent-token' http://127.0.0.1:8790/status
 | `POST /factory-reset` | `0x25` | ⚠️ 出厂重置 |
 | `POST /rgb` `{leds:[{i,r,g,b}\|{i,color:"#RRGGBB"}]}` | `0x26` | 12 颗 RGB 单独控制 |
 | `POST /rgb/all` `{color:"#RRGGBB"}` 或 `{r,g,b}` | `0x27` | 12 颗整体显示一种颜色 |
-| `GET /events` (SSE) | — | 订阅出站事件：`imu`、`headTouch`、`screenTouch`、`button`、`ir`、`nfc`、`servoFeedback`、`proximityLight`、`mic.started`、`mic.stopped`、`mic.stats` |
+| `GET /events` (SSE) | — | 订阅出站事件：`imu`、`headTouch`、`screenTouch`、`button`、`ir`、`nfc`、`servoFeedback`、`proximityLight`、`mic.started`、`mic.stopped`、`mic.stats`、`audio.started`、`audio.stopped`、`audio.stats` |
 | `GET /capabilities` | — | 查询能力状态：`available/stub` |
 | `GET /health/drivers` | `0x40` | 查询固件驱动健康状态（Phase1 为 probe/null 驱动） |
 
@@ -78,6 +78,37 @@ curl -H 'Authorization: Bearer local-agent-token' http://127.0.0.1:8790/status
 - SSE event types: `mic.started`, `mic.stopped`, `mic.stats` (filter via `/events?types=mic.*`).
 
 Header layout (binary): `u32 BE stream_hash | u32 BE seq | u64 BE timestamp_ms | opus_payload`.
+
+### Audio Playback (Opus stream)
+
+- `POST /audio/start` body `{duration_ms?: <=300000}` returns `{stream_id, duration_ms}`; returns `409` when a stream is already active.
+- `POST /audio/feed` body = raw Opus frame bytes; returns `{ok:true}`. Feed frames after starting a stream.
+- `POST /audio/stop` returns `{stream_id, stopping:true}`; returns `204` when idle.
+- `GET /audio/status` returns `{active, stream_id?, started_at?, duration_ms?, frames, bytes}`.
+- `POST /audio/play` — alias for `/audio/start`.
+- SSE event types: `audio.started`, `audio.stopped`, `audio.stats`.
+
+### TTS (Text-to-Speech via Edge-TTS)
+
+- `POST /tts/speak` body `{text, voice?, duration_ms?}` returns `{stream_id, status:"streaming", voice}`.
+  Connects to Microsoft Edge-TTS, receives raw 24kHz PCM, resamples to 16kHz, encodes to Opus, and streams frames to the firmware speaker in real-time.
+- Default voice: `zh-CN-XiaoxiaoNeural`. Common voices: `en-US-EmmaMultilingualNeural`, `ja-JP-NanamiNeural`.
+- Requires `libopus-dev` on the host (`apt install libopus-dev`).
+
+```bash
+# Speak Chinese
+curl -X POST http://127.0.0.1:8790/tts/speak \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"你好，我是 StackChan！"}'
+
+# Speak English with a different voice
+curl -X POST http://127.0.0.1:8790/tts/speak \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Hello world!","voice":"en-US-EmmaMultilingualNeural"}'
+
+# Monitor audio events
+curl -N "http://127.0.0.1:8790/events?types=audio.started,audio.stopped"
+```
 
 ### 协议号已保留、固件 stub（B 类）
 
@@ -100,7 +131,6 @@ Header layout (binary): `u32 BE stream_hash | u32 BE seq | u64 BE timestamp_ms |
 | `POST /ir/learn/start` | `0x31` | 进入红外学习模式 |
 | `POST /nfc/read` | `0x33` | 读取 NFC 卡 |
 | `POST /nfc/write` | `0x34` | 写入 NFC 卡 |
-| `POST /audio/play` | `0x36` | 播放任意音频流 |
 | `GET  /screen/snapshot` | `0x3A` | 抓取 LCD 帧 |
 | `GET  /sd/list?path=/` | `0x3B` | microSD 列目录 |
 | `GET  /sd/read?path=…` | `0x3C` | microSD 读文件 |

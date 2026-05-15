@@ -87,6 +87,7 @@ public:
         ScreenCapture     = 0x3A,  // 入站/响应 stub
         SdList            = 0x3B,  // 入站 stub
         MicStatus         = 0x3C,  // 出站: JSON {event:"started|stopped|stats", stream_id, ...}
+        AudioStatus       = 0x3D,  // 出站: JSON {event:"started|stopped|stats", stream_id, ...}
         SdRead            = 0x42,  // 入站 stub
         SdWrite           = 0x43,  // 入站 stub
         ServoFeedback     = 0x44,  // 出站 stub
@@ -213,6 +214,32 @@ public:
             std::string out;
             ArduinoJson::serializeJson(doc, out);
             sendPacket(DataType::MicStatus, (const uint8_t*)out.c_str(), out.size());
+        });
+
+        GetHAL().Speaker().SetStatusCallback([this](const stackchan::hal::SpeakerStatusEvent& event) {
+            if (!isConnected()) {
+                return;
+            }
+            ArduinoJson::JsonDocument doc;
+            doc["event"] = event.kind == stackchan::hal::SpeakerStatusEvent::Kind::Started    ? "started"
+                           : event.kind == stackchan::hal::SpeakerStatusEvent::Kind::Stopped ? "stopped"
+                                                                                              : "stats";
+            doc["stream_id"] = event.streamId;
+            if (event.kind == stackchan::hal::SpeakerStatusEvent::Kind::Started) {
+                doc["sample_rate"]       = event.startedConfig.sampleRate;
+                doc["channels"]          = event.startedConfig.channels;
+                doc["frame_duration_ms"] = event.startedConfig.frameDurationMs;
+                doc["duration_ms"]       = event.startedConfig.durationMs;
+            } else {
+                doc["frames"] = event.frames;
+                doc["bytes"]  = event.bytes;
+                if (event.kind == stackchan::hal::SpeakerStatusEvent::Kind::Stopped) {
+                    doc["reason"] = event.reason;
+                }
+            }
+            std::string out;
+            ArduinoJson::serializeJson(doc, out);
+            sendPacket(DataType::AudioStatus, (const uint8_t*)out.c_str(), out.size());
         });
     }
 
@@ -565,12 +592,34 @@ public:
                     }
                     break;
                 }
-                // ---- B 类 stub: 协议号已保留，等待硬件驱动实现 ----
+                case DataType::PlayAudio: {
+                    if (msg.data.size() < 5) {
+                        break;
+                    }
+                    const uint8_t* payload = msg.data.data() + 5;
+                    size_t payloadLen = msg.data.size() - 5;
+                    if (GetHAL().Speaker().IsActive()) {
+                        // Feed Opus frame to running speaker stream
+                        GetHAL().Speaker().FeedFrame(payload, payloadLen);
+                    } else {
+                        // First frame: parse JSON config and start speaker
+                        std::string jsonStr(reinterpret_cast<const char*>(payload), payloadLen);
+                        handlePlayAudioStart(jsonStr, type);
+                    }
+                    break;
+                }
+                case DataType::StartAudioStream: {
+                    // Used as PlayAudioStop
+                    break;
+                }
+                case DataType::StopAudioStream: {
+                    GetHAL().Speaker().Stop("user");
+                    break;
+                }
                 case DataType::IrSend:
                 case DataType::IrLearnStart:
                 case DataType::NfcRead:
                 case DataType::NfcWrite:
-                case DataType::PlayAudio:
                 case DataType::ScreenCapture:
                 case DataType::SdList:
                 case DataType::SdRead:
@@ -761,6 +810,7 @@ private:
             case DataType::NfcRead: return "nfc.read";
             case DataType::NfcWrite: return "nfc.write";
             case DataType::PlayAudio: return "audio.play";
+            case DataType::StopAudioStream: return "audio.stop";
             case DataType::MicStreamStart: return "mic.start";
             case DataType::MicStreamStop: return "mic.stop";
             case DataType::ScreenCapture: return "screen.capture";
@@ -873,6 +923,39 @@ private:
             }
         }
         GetHAL().Mic().Stop("user");
+    }
+
+    void handlePlayAudioStart(const std::string& payload, DataType requestType)
+    {
+        ArduinoJson::JsonDocument doc;
+        auto error = ArduinoJson::deserializeJson(doc, payload);
+        if (error) {
+            sendCapabilityError("audio.play", "invalid_args", "bad audio play json", (int)requestType);
+            return;
+        }
+
+        stackchan::hal::SpeakerStreamConfig config;
+        if (doc["sample_rate"].is<uint32_t>()) {
+            config.sampleRate = doc["sample_rate"].as<uint32_t>();
+        }
+        if (doc["channels"].is<uint8_t>()) {
+            config.channels = doc["channels"].as<uint8_t>();
+        }
+        if (doc["frame_duration_ms"].is<uint16_t>()) {
+            config.frameDurationMs = doc["frame_duration_ms"].as<uint16_t>();
+        }
+        if (doc["duration_ms"].is<uint32_t>()) {
+            config.durationMs = doc["duration_ms"].as<uint32_t>();
+        }
+        if (doc["stream_id"].is<std::string>()) {
+            config.streamId = doc["stream_id"].as<std::string>();
+        }
+
+        std::string err;
+        if (!GetHAL().Speaker().Start(config, &err)) {
+            const char* code = err.empty() ? "unavailable" : err.c_str();
+            sendCapabilityError("audio.play", code, "audio play start failed", (int)requestType);
+        }
     }
 
     void handleSetBrightness(const std::string& payload)

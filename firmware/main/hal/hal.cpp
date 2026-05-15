@@ -279,6 +279,11 @@ stackchan::hal::MicSubsystem& Hal::Mic()
     return _mic;
 }
 
+stackchan::hal::SpeakerSubsystem& Hal::Speaker()
+{
+    return _speaker;
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                    Lvgl                                    */
 /* -------------------------------------------------------------------------- */
