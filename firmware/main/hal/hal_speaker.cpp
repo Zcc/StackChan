@@ -238,7 +238,7 @@ bool SpeakerSubsystem::Start(const SpeakerStreamConfig& requestedConfig, std::st
         statusCallback(event);
     }
 
-    if (xTaskCreatePinnedToCore(&Impl::taskTrampoline, "hal_spk", 8192, impl_, 5, &impl_->task, 1) != pdPASS) {
+    if (xTaskCreatePinnedToCore(&Impl::taskTrampoline, "hal_spk", 32768, impl_, 5, &impl_->task, 1) != pdPASS) {
         impl_->running.store(false);
         esp_opus_dec_close(impl_->opusDecoder);
         impl_->opusDecoder = nullptr;

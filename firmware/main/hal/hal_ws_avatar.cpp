@@ -513,12 +513,6 @@ public:
                     }
                     break;
                 }
-                case DataType::StartAudioStream: {
-                    break;
-                }
-                case DataType::StopAudioStream: {
-                    break;
-                }
                 case DataType::AimedTakePhoto: {
                     ESP_LOGI(_tag.c_str(), "AimedTakePhoto");
                     captureAndSendFrame(DataType::AimedTakePhoto);
