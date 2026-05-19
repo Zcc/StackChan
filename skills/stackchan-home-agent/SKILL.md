@@ -87,6 +87,30 @@ Turn lights off:
 node skills/stackchan-home-agent/bin/stackchan-home-agent.js light-off
 ```
 
+### Marquee
+
+Run a marquee (跑马灯) animation across the 12 RGB LEDs:
+
+```bash
+node skills/stackchan-home-agent/bin/stackchan-home-agent.js marquee
+node skills/stackchan-home-agent/bin/stackchan-home-agent.js marquee --color '#00AAFF' --speed-ms 60 --cycles 5 --tail 2
+node skills/stackchan-home-agent/bin/stackchan-home-agent.js marquee --bounce --reverse
+```
+
+Options:
+
+- `--color` head color, default `#FF5000`
+- `--bg` background color, default `#000000`
+- `--count` LED count, default `12`
+- `--speed-ms` per-frame delay in milliseconds, default `80`
+- `--cycles` number of full sweeps, default `3`
+- `--tail` fading tail length in LEDs (0 disables), default `0`
+- `--reverse` run from last LED to first
+- `--bounce` ping-pong instead of wrap-around
+- `--keep-on` skip the final all-off frame
+
+The command turns all LEDs off when it finishes unless `--keep-on` is set.
+
 ### Photo
 
 Take one snapshot and save it to a local file:

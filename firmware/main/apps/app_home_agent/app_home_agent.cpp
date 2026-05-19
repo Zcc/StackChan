@@ -288,7 +288,7 @@ void AppHomeAgent::create_hud(bool configured, bool networkReady)
 
     _relay_online = configured && networkReady;
     update_hud();
-    set_agent_card("", configured ? (networkReady ? "Waiting for home agent" : "No Wi-Fi. Use phone hotspot or setup.") : "Set relay in the app.");
+    set_agent_card("", configured ? (networkReady ? "" : "No Wi-Fi. Use phone hotspot or setup.") : "Set relay in the app.");
 }
 
 void AppHomeAgent::update_hud()

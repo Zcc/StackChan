@@ -29,6 +29,8 @@ async function main() {
       return light(args);
     case 'light-off':
       return light(['#000000', '--duration', '500']);
+    case 'marquee':
+      return marquee(args);
     case 'photo':
       return photo('/snapshot', args);
     case 'latest-photo':
@@ -72,6 +74,68 @@ async function light(args) {
   const color = normalizeHexColor(args[0] || '#000000');
   const durationMs = numberOption(args, '--duration', readOption(args, '--durationMs') || args[1] || 1000);
   return printJSON(await requestJSON('POST', '/light', { color, durationMs }));
+}
+
+async function marquee(args) {
+  const color = parseHexRgb(readOption(args, '--color') || '#FF5000');
+  const bgRaw = readOption(args, '--bg');
+  const bg = bgRaw ? parseHexRgb(bgRaw) : { r: 0, g: 0, b: 0 };
+  const count = Math.max(1, Math.floor(numberOption(args, '--count', readOption(args, '--leds') || 12)));
+  const speedMs = Math.max(10, Math.floor(numberOption(args, '--speed-ms', readOption(args, '--speed') || 80)));
+  const cycles = Math.max(1, Math.floor(numberOption(args, '--cycles', 3)));
+  const tail = Math.max(0, Math.floor(numberOption(args, '--tail', 0)));
+  const reverse = args.includes('--reverse');
+  if (reverse) args.splice(args.indexOf('--reverse'), 1);
+  const bounce = args.includes('--bounce');
+  if (bounce) args.splice(args.indexOf('--bounce'), 1);
+  const keepOn = args.includes('--keep-on');
+  if (keepOn) args.splice(args.indexOf('--keep-on'), 1);
+
+  const positions = [];
+  for (let c = 0; c < cycles; c++) {
+    if (bounce) {
+      for (let i = 0; i < count; i++) positions.push(reverse ? count - 1 - i : i);
+      for (let i = count - 2; i > 0; i--) positions.push(reverse ? count - 1 - i : i);
+    } else {
+      for (let i = 0; i < count; i++) positions.push(reverse ? count - 1 - i : i);
+    }
+  }
+
+  for (const head of positions) {
+    const leds = [];
+    for (let i = 0; i < count; i++) {
+      let r = bg.r, g = bg.g, b = bg.b;
+      const dist = Math.abs(i - head);
+      if (i === head) {
+        ({ r, g, b } = color);
+      } else if (tail > 0 && dist <= tail) {
+        const factor = 1 - dist / (tail + 1);
+        r = Math.round(bg.r + (color.r - bg.r) * factor);
+        g = Math.round(bg.g + (color.g - bg.g) * factor);
+        b = Math.round(bg.b + (color.b - bg.b) * factor);
+      }
+      leds.push({ i, r, g, b });
+    }
+    await requestJSON('POST', '/rgb', { leds });
+    await delay(speedMs);
+  }
+
+  if (!keepOn) {
+    const offLeds = [];
+    for (let i = 0; i < count; i++) offLeds.push({ i, r: 0, g: 0, b: 0 });
+    await requestJSON('POST', '/rgb', { leds: offLeds });
+  }
+
+  return printJSON({ ok: true, frames: positions.length, count, cycles, speedMs });
+}
+
+function parseHexRgb(value) {
+  const normalized = normalizeHexColor(value).slice(1);
+  return {
+    r: parseInt(normalized.slice(0, 2), 16),
+    g: parseInt(normalized.slice(2, 4), 16),
+    b: parseInt(normalized.slice(4, 6), 16),
+  };
 }
 
 async function photo(endpoint, args, method = 'POST') {
@@ -277,7 +341,7 @@ function printJSON(value) {
 }
 
 function help() {
-  process.stdout.write(`Usage: stackchan-home-agent <command> [args]\n\nCommands:\n  status\n  say <text> [--name Name]\n  look --yaw <n> --pitch <n> [--speed <n>]\n  light <#RRGGBB> [--duration <ms>]\n  light-off\n  photo [--out path]\n  latest-photo [--out path]\n  camera-start\n  camera-stop\n  mic-listen [--out path] [--duration-ms ms]\n`);
+  process.stdout.write(`Usage: stackchan-home-agent <command> [args]\n\nCommands:\n  status\n  say <text> [--name Name]\n  look --yaw <n> --pitch <n> [--speed <n>]\n  light <#RRGGBB> [--duration <ms>]\n  light-off\n  marquee [--color #RRGGBB] [--bg #RRGGBB] [--count 12] [--speed-ms 80] [--cycles 3] [--tail 0] [--reverse] [--bounce] [--keep-on]\n  photo [--out path]\n  latest-photo [--out path]\n  camera-start\n  camera-stop\n  mic-listen [--out path] [--duration-ms ms]\n`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {

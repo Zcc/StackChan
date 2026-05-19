@@ -164,7 +164,9 @@ func main() {
 	http.HandleFunc("/audio/feed", b.withAuth(b.handleAudioFeed))
 	http.HandleFunc("/audio/stop", b.withAuth(b.handleAudioStop))
 	http.HandleFunc("/audio/status", b.withAuth(b.handleAudioStatus))
-	http.HandleFunc("/tts/speak", b.withAuth(b.handleTTSSpeak))
+	http.HandleFunc("/tts/speak", b.withAuth(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "tts disabled in this build (opus dep unavailable)", http.StatusServiceUnavailable)
+	}))
 	http.HandleFunc("/mic/start", b.withAuth(b.handleMicStart))
 	http.HandleFunc("/mic/stop", b.withAuth(b.handleMicStop))
 	http.HandleFunc("/mic/status", b.withAuth(b.handleMicStatus))
@@ -560,14 +562,17 @@ func neutralLightPart() map[string]any {
 		"position": map[string]any{"x": 0, "y": 0},
 		"rotation": 0,
 		"weight":   100,
-		"size":     0,
+		"size":     100,
 	}
 }
 
 func neutralMouthPart() map[string]any {
-	part := neutralLightPart()
-	part["weight"] = 0
-	return part
+	return map[string]any{
+		"position": map[string]any{"x": 0, "y": 0},
+		"rotation": 0,
+		"weight":   100,
+		"size":     100,
+	}
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
