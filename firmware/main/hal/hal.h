@@ -146,6 +146,18 @@ struct HomeAgentConfig_t {
  * @brief
  *
  */
+enum class MicTestStatus {
+    Starting = 0,
+    Recording,
+    Playing,
+    Done,
+    Failed,
+};
+
+/**
+ * @brief
+ *
+ */
 class BootLogo {
 public:
     BootLogo()
@@ -323,6 +335,9 @@ public:
     uint8_t getSpeakerVolume();
     stackchan::hal::MicSubsystem& Mic();
     stackchan::hal::SpeakerSubsystem& Speaker();
+    std::string startMicTest(std::function<void(MicTestStatus)> onStatusUpdate);
+    void getMicWaveformFrame(std::vector<int16_t>& data);
+    void clearupMicTest();
 
 private:
     bool _xiaozhi_start_requested = false;
