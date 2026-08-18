@@ -81,7 +81,7 @@ var (
 			})
 
 			// Do not use SetServerRoot, globally only provide frontend entry via /web
-			//s.SetServerRoot("web/management")
+			s.SetServerRoot("web/management")
 
 			s.SetPort(12800)
 			s.Run()

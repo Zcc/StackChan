@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gctx"
@@ -261,6 +262,15 @@ func GenerateFourKeys() {
 	clientPrivateKey, clientPublicKey = generateKeyPair(2048)
 
 	// Print PEM
+	//fmt.Println("=== Server Private Key ===")
+	//fmt.Println(keyToPEM(serverPrivateKey, true))
+	//fmt.Println("=== Server Public Key ===")
+	//fmt.Println(keyToPEM(serverPublicKey, false))
+
+	fmt.Println("=== Client Private Key ===")
+	fmt.Println(keyToPEM(clientPrivateKey, true))
+	fmt.Println("=== Client Public Key ===")
+	fmt.Println(keyToPEM(clientPublicKey, false))
 
 	// Mark initialization complete
 	initialized = true

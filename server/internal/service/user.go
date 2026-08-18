@@ -141,8 +141,7 @@ func Registration(ctx context.Context, req *v2.RegistrationReq) (res *v2.Registr
 	if err != nil {
 		return nil, err
 	}
-	responseData := v2.RegistrationRes(remoteResp)
-	return &responseData, nil
+	return new(v2.RegistrationRes(remoteResp)), nil
 }
 
 // callRemoteRegister Call remote registration interface

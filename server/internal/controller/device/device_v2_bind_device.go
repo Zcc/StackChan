@@ -9,8 +9,10 @@ import (
 	"context"
 	"stackChan/internal/dao"
 	"stackChan/internal/model"
+	"stackChan/internal/model/do"
 	"stackChan/internal/service"
 
+	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
@@ -21,8 +23,6 @@ import (
 
 // BindDevice Device binding interface
 func (c *ControllerV2) BindDevice(ctx context.Context, req *v2.BindDeviceReq) (res *v2.BindDeviceRes, err error) {
-	// 1. Get current logged-in user UID (from context)
-	_, err = service.CreateMacIfNotExists(ctx, req.Mac)
 	uid := g.RequestFromCtx(ctx).GetCtxVar(model.Uid).Int64()
 	if uid == 0 {
 		return nil, gerror.NewCode(gcode.CodeMissingParameter, "User UID cannot be empty")
@@ -30,10 +30,21 @@ func (c *ControllerV2) BindDevice(ctx context.Context, req *v2.BindDeviceReq) (r
 	if req.Mac == "" {
 		return nil, gerror.NewCode(gcode.CodeMissingParameter, "Device MAC address cannot be empty")
 	}
-	_, err = dao.Device.Ctx(ctx).
-		Where("mac = ?", req.Mac).
-		Data("uid", uid, "bind_time", gtime.Now().Format("Y-m-d H:i:s")).
-		Update()
+
+	err = g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if err = service.CreateMacIfNotExistsWithTx(ctx, tx, req.Mac); err != nil {
+			return err
+		}
+
+		_, err = dao.Device.Ctx(ctx).TX(tx).
+			Where("mac = ?", req.Mac).
+			Data(do.Device{
+				Uid:      uid,
+				BindTime: gtime.Now().Format("Y-m-d H:i:s"),
+			}).
+			Update()
+		return err
+	})
 	if err != nil {
 		return nil, gerror.WrapCode(gcode.CodeDbOperationError, err, "Device binding failed")
 	}
